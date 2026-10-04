@@ -6,7 +6,7 @@ import { Wordmark } from './Brand';
 import { RunPanel } from './RunPanel';
 import { SkillGrid } from './SkillGrid';
 import { CommandBar } from './CommandBar';
-import { TodayCard } from './TodayCard';
+import { TodayCard, type TodaySource } from './TodayCard';
 import { SectionLabel, Spinner } from './ui';
 
 function greeting(d: Date) {
@@ -36,6 +36,56 @@ export function Home() {
       if (latest) setRunId((cur) => cur ?? latest);
     }
   }, []);
+
+  // ── Today: email provenance, inbox sync, live polling (agent S4)
+  const [sources, setSources] = useState<Record<string, TodaySource>>({});
+  const [checking, setChecking] = useState(false);
+  const [inboxNote, setInboxNote] = useState<string | null>(null);
+
+  const loadSources = useCallback(async () => {
+    if (isMockMode()) return;
+    const res = await fetch('/api/inbox', { cache: 'no-store' });
+    if (!res.ok) return;
+    const body = (await res.json()) as { sources: Record<string, { sourceLabel: string; subject: string }> };
+    setSources(
+      Object.fromEntries(Object.entries(body.sources).map(([id, s]) => [id, { label: s.sourceLabel, detail: s.subject }])),
+    );
+  }, []);
+
+  const refreshToday = useCallback(async () => {
+    await Promise.all([loadToday(), loadSources().catch(() => {})]);
+  }, [loadToday, loadSources]);
+
+  // Poll every 5s while the page is visible, so a webhook-delivered card appears without a refresh.
+  useEffect(() => {
+    if (isMockMode()) return;
+    loadSources().catch(() => {});
+    const tick = () => {
+      if (document.visibilityState === 'visible') refreshToday().catch(() => {});
+    };
+    const id = window.setInterval(tick, 5000);
+    document.addEventListener('visibilitychange', tick);
+    return () => {
+      window.clearInterval(id);
+      document.removeEventListener('visibilitychange', tick);
+    };
+  }, [loadSources, refreshToday]);
+
+  const checkInbox = useCallback(async () => {
+    setChecking(true);
+    setInboxNote(null);
+    try {
+      const res = await fetch('/api/inbox/sync', { method: 'POST', cache: 'no-store' });
+      const body = (await res.json().catch(() => ({}))) as { ingested?: number; error?: string };
+      if (!res.ok) throw new Error(body.error ?? `Inbox check failed (${res.status})`);
+      setInboxNote(body.ingested ? `${body.ingested} new from your inbox` : 'Inbox is up to date');
+      await refreshToday();
+    } catch (e) {
+      setInboxNote(e instanceof Error ? e.message : 'Inbox check failed');
+    } finally {
+      setChecking(false);
+    }
+  }, [refreshToday]);
 
   const loadSkills = useCallback(async () => {
     const { skills } = await api.getSkills();
@@ -133,7 +183,29 @@ export function Home() {
       </section>
 
       <section aria-labelledby="today" className="mb-14">
-        <SectionLabel>
+        <SectionLabel
+          right={
+            mock ? undefined : (
+              <span className="flex items-center gap-2">
+                {inboxNote && <span className="hidden text-[13px] text-ink-faint sm:inline">{inboxNote}</span>}
+                <button
+                  onClick={checkInbox}
+                  disabled={checking}
+                  className="inline-flex h-8 items-center gap-1.5 rounded-full px-3 text-[13px] text-ink-faint transition-colors hover:bg-ink/5 hover:text-ink-soft disabled:opacity-60"
+                >
+                  {checking ? (
+                    <Spinner className="size-3.5" />
+                  ) : (
+                    <svg viewBox="0 0 24 24" className="size-3.5" aria-hidden>
+                      <path d="M4 6.5h16v11H4zM4.5 7l7.5 6 7.5-6" fill="none" stroke="currentColor" strokeWidth="2" strokeLinejoin="round" />
+                    </svg>
+                  )}
+                  Check inbox
+                </button>
+              </span>
+            )
+          }
+        >
           <span id="today">Today</span>
         </SectionLabel>
         {error && (
@@ -153,6 +225,7 @@ export function Home() {
               <TodayCard
                 key={item.triggerId}
                 item={item}
+                source={sources[item.triggerId] ?? null}
                 active={!!runId && activeTrigger === item.triggerId && item.state === 'running'}
                 busy={starting === item.triggerId}
                 onRun={() => item.matchedSkill && start(item.matchedSkill.id, item.triggerId)}
