@@ -1,13 +1,22 @@
 // Smoke test for the Executor tool adapter.
-//   npx tsx scripts/smoke-executor.ts
-// If EXECUTOR_MCP_URL + EXECUTOR_API_KEY are set, this makes a REAL call: it lists Executor's tools,
-// then creates the event on the Google Calendar the user connected in Executor. Otherwise it uses the
-// .ics fallback. Either way the .ics is written to the OS temp dir.
+//   npx tsx scripts/smoke-executor.ts           auto: Cloud HTTP if EXECUTOR_MCP_URL+KEY, else local CLI (stdio), else .ics
+//   npx tsx scripts/smoke-executor.ts --local   force the local `executor mcp --mode passthrough` (stdio) path
+//   npx tsx scripts/smoke-executor.ts --ics     force the .ics fallback (EXECUTOR_LOCAL=0, no HTTP)
+// With Executor configured this makes a REAL call: it lists Executor's tools/integrations, then creates the
+// event only on a Google Calendar the user connected in Executor. Either way the .ics is written to the OS temp dir.
 import 'dotenv/config';
 import { writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { buildIcs, getToolAdapter, listExecutorTools, readExecutorConfig } from '@/lib/executor';
+import { buildIcs, closeExecutor, describeConfig, getToolAdapter, listExecutorTools, readExecutorConfig } from '@/lib/executor';
+
+const args = process.argv.slice(2);
+if (args.includes('--local') || args.includes('--ics')) {
+  delete process.env.EXECUTOR_MCP_URL;
+  delete process.env.EXECUTOR_API_KEY;
+  delete process.env.EXECUTOR_AUTH_TOKEN;
+}
+if (args.includes('--ics')) process.env.EXECUTOR_LOCAL = '0';
 
 async function main() {
   // Tomorrow 10:00–10:30 local time.
@@ -24,13 +33,16 @@ async function main() {
   };
 
   const cfg = readExecutorConfig();
-  console.log(`Executor configured: ${cfg ? `yes (${new URL(cfg.url).origin}${new URL(cfg.url).pathname})` : 'no (EXECUTOR_MCP_URL / EXECUTOR_API_KEY unset)'}`);
+  console.log(`Executor transport: ${cfg ? describeConfig(cfg) : 'none (no EXECUTOR_MCP_URL+KEY, no local CLI) → .ics'}`);
   if (cfg) {
+    const t0 = Date.now();
     try {
-      const tools = await listExecutorTools();
-      console.log('MCP tools:', tools.mcpTools.join(', ') || '(none)');
-      console.log('Integrations:', JSON.stringify(tools.integrations, null, 2).slice(0, 2000));
-      console.log('Calendar tools:', tools.calendarTools.map((t) => t.id).join(', ') || '(none — connect Google Calendar)');
+      const r = await listExecutorTools();
+      console.log(`connected + listed in ${Date.now() - t0}ms`);
+      console.log('MCP tools:', r.mcpTools.join(', ') || '(none)');
+      console.log('integrations:', JSON.stringify(r.integrations).slice(0, 1500));
+      console.log(`search "${r.searchQuery}":`, JSON.stringify(r.searchResult).slice(0, 1500));
+      console.log('calendar tools:', r.calendarTools.map((t) => t.id).join(', ') || '(none — connect Google Calendar in Executor)');
     } catch (e) {
       console.log('listExecutorTools failed:', e instanceof Error ? e.message : e);
     }
@@ -50,7 +62,9 @@ async function main() {
   if (!result.ok) process.exitCode = 1;
 }
 
-main().catch((e) => {
-  console.error(e);
-  process.exit(1);
-});
+main()
+  .catch((e) => {
+    console.error(e);
+    process.exitCode = 1;
+  })
+  .finally(() => closeExecutor());

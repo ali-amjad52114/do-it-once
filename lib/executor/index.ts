@@ -7,6 +7,7 @@ import { buildIcs } from './ics';
 import {
   buildInsertArguments,
   connectExecutor,
+  describeConfig,
   extractEventLink,
   extractSearchItems,
   parseToolResult,
@@ -20,20 +21,76 @@ import {
 } from './mcp';
 
 export { buildIcs, escapeIcsText, foldIcsLine, formatIcsUtc } from './ics';
-export { buildInsertArguments, pickCalendarInsertTool, readExecutorConfig } from './mcp';
-export type { McpLike, FoundTool } from './mcp';
+export { buildInsertArguments, describeConfig, pickCalendarInsertTool, readExecutorConfig, resolveExecutorBin } from './mcp';
+export type { ExecutorConfig, McpLike, FoundTool } from './mcp';
 
-const SEARCH_QUERIES = ['google calendar events insert', 'calendar create event', 'calendar event'];
+const SEARCH_QUERIES = ['google calendar create event', 'google calendar events insert', 'calendar event'];
 const DEFAULT_TIMEOUT_MS = 25_000;
 
+export class CalendarNotConnectedError extends Error {
+  constructor() {
+    super('Google Calendar not connected in Executor');
+    this.name = 'CalendarNotConnectedError';
+  }
+}
+
+export type ClientCache = Map<string, Promise<McpLike>>;
+
 export interface ToolAdapterDeps {
-  /** Defaults to EXECUTOR_MCP_URL + EXECUTOR_API_KEY from process.env. */
+  /** Defaults to readExecutorConfig(): HTTP if EXECUTOR_MCP_URL+EXECUTOR_API_KEY, else local stdio CLI, else null. */
   config?: ExecutorConfig | null;
-  /** Defaults to a Streamable HTTP MCP client in passthrough mode. */
+  /** Defaults to connectExecutor (Streamable HTTP or stdio, passthrough mode). */
   connect?: (cfg: ExecutorConfig) => Promise<McpLike>;
+  /** Client cache. Default: a globalThis cache when `connect` is the default; none when `connect` is injected. */
+  cache?: ClientCache | false;
   calendarId?: string;
   timeoutMs?: number;
   log?: (msg: string) => void;
+}
+
+// One connected client per config, shared across Next.js hot reloads / route handlers.
+const g = globalThis as typeof globalThis & { __doItOnceExecutorClients?: ClientCache };
+function globalCache(): ClientCache {
+  return (g.__doItOnceExecutorClients ??= new Map());
+}
+
+interface Lease {
+  client: McpLike;
+  /** Done with the client. `broken` drops a cached client so the next call reconnects. */
+  release(broken?: boolean): Promise<void>;
+}
+
+async function acquire(cfg: ExecutorConfig, deps: Pick<ToolAdapterDeps, 'connect' | 'cache'>): Promise<Lease> {
+  const connect = deps.connect ?? connectExecutor;
+  const cache = deps.cache === undefined ? (deps.connect ? false : globalCache()) : deps.cache;
+  if (!cache) {
+    const client = await connect(cfg);
+    return { client, release: () => client.close().catch(() => undefined) };
+  }
+  const key = JSON.stringify(cfg);
+  let p = cache.get(key);
+  if (!p) {
+    p = connect(cfg);
+    cache.set(key, p);
+    p.catch(() => cache.get(key) === p && cache.delete(key));
+  }
+  const client = await p;
+  return {
+    client,
+    release: async (broken) => {
+      if (!broken) return;
+      if (cache.get(key) === p) cache.delete(key);
+      await client.close().catch(() => undefined);
+    },
+  };
+}
+
+/** Closes every cached Executor client (and the local `executor mcp` child process). */
+export async function closeExecutor(): Promise<void> {
+  const cache = globalCache();
+  const all = [...cache.values()];
+  cache.clear();
+  await Promise.all(all.map((p) => p.then((c) => c.close()).catch(() => undefined)));
 }
 
 let schemaLogged = false;
@@ -70,7 +127,7 @@ export async function createViaExecutor(
     tool = pickCalendarInsertTool(extractSearchItems(await call(client, 'search', { query })));
     if (tool) break;
   }
-  if (!tool) throw new Error('No Google Calendar insert tool found in Executor. Connect Google Calendar in the Executor UI.');
+  if (!tool) throw new CalendarNotConnectedError();
 
   if (!schemaLogged) {
     schemaLogged = true;
@@ -88,11 +145,14 @@ export async function createViaExecutor(
   };
 }
 
-function icsFallback(input: CalendarEventInput, reason: string | null): ToolActionResult {
+function icsFallback(input: CalendarEventInput, err: unknown): ToolActionResult {
+  let detail = 'Calendar file ready';
+  if (err instanceof CalendarNotConnectedError) detail = `Calendar file ready (${err.message})`;
+  else if (err) detail = `Calendar file ready (Executor unavailable: ${(err instanceof Error ? err.message : String(err)).slice(0, 300)})`;
   return {
     ok: true,
     via: 'ics',
-    detail: reason ? `Calendar file ready (Executor unavailable: ${reason})` : 'Calendar file ready',
+    detail,
     url: null,
     icsContent: buildIcs(input),
   };
@@ -103,14 +163,17 @@ export function createToolAdapter(deps: ToolAdapterDeps = {}): ToolAdapter {
     async createCalendarEvent(input) {
       const cfg = deps.config === undefined ? readExecutorConfig() : deps.config;
       if (!cfg) return icsFallback(input, null);
-      const connect = deps.connect ?? connectExecutor;
       const timeoutMs = deps.timeoutMs ?? DEFAULT_TIMEOUT_MS;
       const run = (async () => {
-        const client = await connect(cfg);
+        const lease = await acquire(cfg, deps);
+        let broken = false;
         try {
-          return await createViaExecutor(client, input, { calendarId: deps.calendarId, log: deps.log });
+          return await createViaExecutor(lease.client, input, { calendarId: deps.calendarId, log: deps.log });
+        } catch (e) {
+          broken = !(e instanceof CalendarNotConnectedError);
+          throw e;
         } finally {
-          await client.close().catch(() => undefined); // also runs if the timeout already fired
+          await lease.release(broken); // also runs if the timeout already fired
         }
       })();
       run.catch(() => undefined); // avoid an unhandled rejection after a timeout
@@ -119,7 +182,7 @@ export function createToolAdapter(deps: ToolAdapterDeps = {}): ToolAdapter {
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
         (deps.log ?? console.warn)(`[executor] falling back to .ics: ${msg}`);
-        return icsFallback(input, msg.slice(0, 300));
+        return icsFallback(input, err);
       }
     },
   };
@@ -129,19 +192,41 @@ export function getToolAdapter(): ToolAdapter {
   return createToolAdapter();
 }
 
-/** Debugging: the MCP tools Executor exposes plus its connected integrations. Throws if not configured. */
+export interface ExecutorToolsReport {
+  transport: string;
+  mcpTools: string[];
+  integrations: unknown;
+  searchQuery: string;
+  searchResult: unknown;
+  calendarTools: FoundTool[];
+}
+
+/** Debugging: MCP tools, connected integrations and what a calendar search returns. Throws if not configured. */
 export async function listExecutorTools(
-  deps: Pick<ToolAdapterDeps, 'config' | 'connect'> = {},
-): Promise<{ mcpTools: string[]; integrations: unknown; calendarTools: FoundTool[] }> {
+  deps: Pick<ToolAdapterDeps, 'config' | 'connect' | 'cache'> = {},
+): Promise<ExecutorToolsReport> {
   const cfg = deps.config === undefined ? readExecutorConfig() : deps.config;
-  if (!cfg) throw new Error('Executor not configured: set EXECUTOR_MCP_URL and EXECUTOR_API_KEY');
-  const client = await (deps.connect ?? connectExecutor)(cfg);
+  if (!cfg) throw new Error('Executor not configured: set EXECUTOR_MCP_URL + EXECUTOR_API_KEY, or install the executor CLI');
+  const lease = await acquire(cfg, deps);
+  let broken = false;
   try {
+    const { client } = lease;
     const mcpTools = client.listTools ? (await client.listTools()).tools.map((t) => t.name) : [];
     const integrations = await call(client, 'integrations', {}).catch((e: Error) => `error: ${e.message}`);
-    const calendarTools = extractSearchItems(await call(client, 'search', { query: 'google calendar' }));
-    return { mcpTools, integrations, calendarTools };
+    const searchQuery = SEARCH_QUERIES[0];
+    const searchResult = await call(client, 'search', { query: searchQuery });
+    return {
+      transport: describeConfig(cfg),
+      mcpTools,
+      integrations,
+      searchQuery,
+      searchResult,
+      calendarTools: extractSearchItems(searchResult),
+    };
+  } catch (e) {
+    broken = true;
+    throw e;
   } finally {
-    await client.close().catch(() => undefined);
+    await lease.release(broken);
   }
 }

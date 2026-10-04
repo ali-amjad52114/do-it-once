@@ -3,6 +3,10 @@
 // Result shapes are not fully documented, so every parser below is tolerant.
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
+import { StdioClientTransport, getDefaultEnvironment } from '@modelcontextprotocol/sdk/client/stdio.js';
+import { spawnSync } from 'node:child_process';
+import { existsSync } from 'node:fs';
+import path from 'node:path';
 import type { CalendarEventInput } from '@/lib/contracts';
 
 /** The tiny slice of the MCP client we use (mockable in tests). */
@@ -12,26 +16,107 @@ export interface McpLike {
   close(): Promise<void>;
 }
 
-export interface ExecutorConfig {
-  url: string;
-  apiKey: string;
+/** HTTP = Executor Cloud / self-host (`/mcp` + Bearer). stdio = local CLI (`executor mcp --mode passthrough`). */
+export type ExecutorConfig =
+  | { kind: 'http'; url: string; apiKey: string }
+  | { kind: 'stdio'; command: string; args: string[] };
+
+type Env = Record<string, string | undefined>;
+
+/** Find the `executor` CLI on PATH (Windows: executor.cmd / .exe). EXECUTOR_BIN overrides. */
+export function resolveExecutorBin(
+  env: Env = process.env,
+  platform: NodeJS.Platform = process.platform,
+  exists: (p: string) => boolean = existsSync,
+): string | null {
+  const override = env.EXECUTOR_BIN?.trim();
+  if (override) return override;
+  const win = platform === 'win32';
+  const names = win ? ['executor.cmd', 'executor.exe', 'executor.bat'] : ['executor'];
+  const pathVar = env.PATH ?? env.Path ?? '';
+  for (const dir of pathVar.split(win ? ';' : ':')) {
+    if (!dir) continue;
+    for (const n of names) {
+      const p = win ? path.win32.join(dir, n) : path.posix.join(dir, n);
+      if (exists(p)) return p;
+    }
+  }
+  return null;
 }
 
-export function readExecutorConfig(env: Record<string, string | undefined> = process.env): ExecutorConfig | null {
+/**
+ * Transport selection: EXECUTOR_MCP_URL + EXECUTOR_API_KEY → HTTP; else the local `executor` CLI on
+ * PATH (unless EXECUTOR_LOCAL=0) → stdio; else null (→ .ics fallback).
+ */
+export function readExecutorConfig(
+  env: Env = process.env,
+  resolveBin: (env: Env) => string | null = (e) => resolveExecutorBin(e),
+): ExecutorConfig | null {
   const url = env.EXECUTOR_MCP_URL?.trim();
   const apiKey = (env.EXECUTOR_API_KEY ?? env.EXECUTOR_AUTH_TOKEN)?.trim();
-  return url && apiKey ? { url, apiKey } : null;
+  if (url && apiKey) return { kind: 'http', url, apiKey };
+  if (env.EXECUTOR_LOCAL?.trim() === '0') return null;
+  const command = resolveBin(env);
+  return command ? { kind: 'stdio', command, args: ['mcp', '--mode', 'passthrough'] } : null;
+}
+
+export function describeConfig(cfg: ExecutorConfig): string {
+  if (cfg.kind === 'stdio') return `stdio: ${cfg.command} ${cfg.args.join(' ')}`;
+  const u = new URL(cfg.url);
+  return `http: ${u.origin}${u.pathname}`;
 }
 
 export async function connectExecutor(cfg: ExecutorConfig): Promise<McpLike> {
-  const url = new URL(cfg.url);
-  url.searchParams.set('mode', 'passthrough');
-  const transport = new StreamableHTTPClientTransport(url, {
-    requestInit: { headers: { Authorization: `Bearer ${cfg.apiKey}` } },
-  });
   const client = new Client({ name: 'do-it-once', version: '0.1.0' });
-  await client.connect(transport);
+  if (cfg.kind === 'http') {
+    const url = new URL(cfg.url);
+    url.searchParams.set('mode', 'passthrough');
+    await client.connect(
+      new StreamableHTTPClientTransport(url, { requestInit: { headers: { Authorization: `Bearer ${cfg.apiKey}` } } }),
+    );
+  } else {
+    // Attaches to the running local Executor daemon. cross-spawn (inside the SDK) handles .cmd on Windows.
+    const transport = new StdioClientTransport({
+      command: cfg.command,
+      args: cfg.args,
+      env: { ...getDefaultEnvironment(), ...(process.env.HOME ? { HOME: process.env.HOME } : {}) },
+      stderr: 'pipe', // keep the CLI's logs out of our stdout; drained below
+    });
+    transport.stderr?.on('data', () => undefined);
+    await client.connect(transport);
+    const pid = transport.pid;
+    if (pid) {
+      killOnExit(pid);
+      return {
+        callTool: (p) => client.callTool(p),
+        listTools: () => client.listTools(),
+        close: async () => {
+          exitPids.delete(pid);
+          await client.close();
+        },
+      };
+    }
+  }
   return client as unknown as McpLike;
+}
+
+const exitPids = new Set<number>();
+let exitHookInstalled = false;
+function killOnExit(pid: number) {
+  exitPids.add(pid);
+  if (exitHookInstalled) return;
+  exitHookInstalled = true;
+  process.once('exit', () => {
+    for (const p of exitPids) {
+      try {
+        // Windows: the pid is the .cmd shim; kill its whole tree. Synchronous calls are allowed in 'exit'.
+        if (process.platform === 'win32') spawnSync('taskkill', ['/PID', String(p), '/T', '/F'], { stdio: 'ignore' });
+        else process.kill(p);
+      } catch {
+        /* already gone */
+      }
+    }
+  });
 }
 
 // ───────── result parsing ─────────

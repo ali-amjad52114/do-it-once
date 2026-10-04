@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { CalendarEventInput } from '@/lib/contracts';
 import { createToolAdapter, listExecutorTools } from './index';
-import { buildInsertArguments, extractEventLink, extractSearchItems, pickCalendarInsertTool, readExecutorConfig, type McpLike } from './mcp';
+import { buildInsertArguments, extractEventLink, extractSearchItems, pickCalendarInsertTool, readExecutorConfig, resolveExecutorBin, type McpLike } from './mcp';
 
 const input: CalendarEventInput = {
   title: 'Return drop-off',
@@ -9,7 +9,8 @@ const input: CalendarEventInput = {
   end: '2026-10-05T17:30:00.000Z',
   location: 'UPS Store',
 };
-const cfg = { url: 'https://executor.sh/acme/mcp', apiKey: 'k' };
+const cfg = { kind: 'http' as const, url: 'https://executor.sh/acme/mcp', apiKey: 'k' };
+const stdioCfg = { kind: 'stdio' as const, command: 'executor', args: ['mcp', '--mode', 'passthrough'] };
 const text = (v: unknown) => ({ content: [{ type: 'text', text: JSON.stringify(v) }] });
 
 const insertSchema = {
@@ -47,9 +48,65 @@ describe('fallback selection', () => {
     expect(connect).not.toHaveBeenCalled();
   });
 
-  it('reads config only when both env vars are set', () => {
-    expect(readExecutorConfig({ EXECUTOR_MCP_URL: 'https://x/mcp' })).toBeNull();
-    expect(readExecutorConfig({ EXECUTOR_MCP_URL: 'https://x/mcp', EXECUTOR_API_KEY: 'k' })).toEqual({ url: 'https://x/mcp', apiKey: 'k' });
+});
+
+describe('transport selection', () => {
+  const noBin = () => null;
+  const bin = () => 'C:\\node\\executor.cmd';
+
+  it('HTTP when URL + key are set (even if the CLI is installed)', () => {
+    expect(readExecutorConfig({ EXECUTOR_MCP_URL: 'https://x/mcp', EXECUTOR_API_KEY: 'k' }, bin)).toEqual({ kind: 'http', url: 'https://x/mcp', apiKey: 'k' });
+  });
+  it('stdio when only the CLI is available', () => {
+    expect(readExecutorConfig({ EXECUTOR_MCP_URL: 'https://x/mcp' }, bin)).toEqual({
+      kind: 'stdio',
+      command: 'C:\\node\\executor.cmd',
+      args: ['mcp', '--mode', 'passthrough'],
+    });
+    expect(readExecutorConfig({}, bin)?.kind).toBe('stdio');
+  });
+  it('EXECUTOR_LOCAL=0 disables stdio', () => {
+    expect(readExecutorConfig({ EXECUTOR_LOCAL: '0' }, bin)).toBeNull();
+  });
+  it('null (→ ics) when nothing is available', () => {
+    expect(readExecutorConfig({}, noBin)).toBeNull();
+  });
+  it('resolves executor.cmd on Windows PATH, plain executor elsewhere, and EXECUTOR_BIN overrides', () => {
+    const files = new Set(['C:\\b\\executor.cmd', '/usr/local/bin/executor']);
+    const exists = (p: string) => files.has(p);
+    expect(resolveExecutorBin({ PATH: 'C:\\a;C:\\b' }, 'win32', exists)).toBe('C:\\b\\executor.cmd');
+    expect(resolveExecutorBin({ Path: 'C:\\b' }, 'win32', exists)).toBe('C:\\b\\executor.cmd');
+    expect(resolveExecutorBin({ PATH: '/usr/bin:/usr/local/bin' }, 'linux', exists)).toBe('/usr/local/bin/executor');
+    expect(resolveExecutorBin({ PATH: 'C:\\a' }, 'win32', exists)).toBeNull();
+    expect(resolveExecutorBin({ PATH: '', EXECUTOR_BIN: '/opt/executor' }, 'linux', exists)).toBe('/opt/executor');
+  });
+});
+
+describe('client caching', () => {
+  it('reuses one client across calls and drops it after a transport failure', async () => {
+    const cache = new Map();
+    const client = mockClient();
+    const connect = vi.fn(async () => client);
+    const adapter = createToolAdapter({ config: stdioCfg, connect, cache, log: () => {} });
+    expect((await adapter.createCalendarEvent(input)).via).toBe('executor');
+    expect((await adapter.createCalendarEvent(input)).via).toBe('executor');
+    expect(connect).toHaveBeenCalledTimes(1);
+    expect(client.close).not.toHaveBeenCalled();
+
+    // "not connected" keeps the client; a real error drops it
+    const notConnected = mockClient({ search: () => text({ items: [] }) });
+    const c2 = new Map();
+    const connect2 = vi.fn(async () => notConnected);
+    const a2 = createToolAdapter({ config: stdioCfg, connect: connect2, cache: c2, log: () => {} });
+    expect((await a2.createCalendarEvent(input)).detail).toContain('not connected');
+    expect(c2.size).toBe(1);
+
+    const failing = mockClient({ invoke: () => { throw new Error('pipe closed'); } });
+    const c3 = new Map();
+    const a3 = createToolAdapter({ config: stdioCfg, connect: async () => failing, cache: c3, log: () => {} });
+    expect((await a3.createCalendarEvent(input)).detail).toContain('pipe closed');
+    expect(c3.size).toBe(0);
+    expect(failing.close).toHaveBeenCalled();
   });
 
   it('falls back with the Executor error when connect fails', async () => {
@@ -72,7 +129,8 @@ describe('fallback selection', () => {
     const client = mockClient({ search: () => text({ items: [] }) });
     const r = await createToolAdapter({ config: cfg, connect: async () => client, log: () => {} }).createCalendarEvent(input);
     expect(r.via).toBe('ics');
-    expect(r.detail).toContain('Connect Google Calendar');
+    expect(r.ok).toBe(true);
+    expect(r.detail).toBe('Calendar file ready (Google Calendar not connected in Executor)');
   });
 
   it('falls back on timeout', async () => {
