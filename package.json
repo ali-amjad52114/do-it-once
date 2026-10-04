@@ -1,7 +1,9 @@
 {
-  "name": "neon",
+  "name": "do-it-once",
   "version": "1.0.0",
-  "description": "",
+  "private": true,
+  "description": "Do it once. Your agent does it forever. Learns web chores from one run, replays them through cloud browsers with approval and verification, and heals when sites change.",
+  "type": "module",
   "scripts": {
     "dev": "next dev",
     "build": "next build",
@@ -16,14 +18,25 @@
     "type": "git",
     "url": "git+https://github.com/ali-amjad52114/neon.git"
   },
-  "keywords": [],
-  "author": "",
-  "license": "ISC",
-  "type": "module",
+  "homepage": "https://github.com/ali-amjad52114/neon#readme",
   "bugs": {
     "url": "https://github.com/ali-amjad52114/neon/issues"
   },
-  "homepage": "https://github.com/ali-amjad52114/neon#readme",
+  "keywords": [
+    "ai-agent",
+    "browser-automation",
+    "mastra",
+    "kernel",
+    "neon",
+    "pgvector",
+    "agentmail",
+    "exa",
+    "assistant-ui",
+    "fly-io",
+    "hackathon"
+  ],
+  "author": "Ali Amjad",
+  "license": "MIT",
   "dependencies": {
     "@assistant-ui/ai-sdk": "^0.0.9",
     "@assistant-ui/react": "^0.15.23",
