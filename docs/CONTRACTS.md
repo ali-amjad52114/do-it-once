@@ -144,3 +144,50 @@ timestamp and screenshot from `/api/artifacts/:id`.
 Product UI, not a developer dashboard. See PLAN.md S1/B5. Talks only to the API above through
 `lib/client/api.ts` + `useRunStream(runId)` (EventSource). Must also render from mock data with
 `?mock=1` so it can be developed before the API exists.
+
+---
+
+# Wave A (S2 · S4 · S-Leaf)
+
+New types are at the bottom of `lib/contracts.ts` ("Wave A additions"). Dependencies are already
+installed: `@mastra/observability @mastra/ai-sdk @mastra/mcp ai @assistant-ui/react @assistant-ui/ai-sdk
+agentmail svix exa-js @fly/sprites @modelcontextprotocol/sdk`. Only **M3** may add packages
+(assistant-ui UI kit); everyone else reports needed packages instead.
+
+## Shared, already working (do not edit — lead owns)
+- `lib/ai/gateway.ts`: Neon AI Gateway client — `chat`, `chatJSON(schema)`, `embed` (1024 dims),
+  `MODELS.fast|smart|embed`, `toVectorLiteral`. **Every model call goes through Neon AI Gateway.**
+  Mastra agents may instead use the model string `neon/<model>` (reads the same env vars) — verify.
+- `lib/skills/retrieve.ts` `matchSkills(userId, text, limit)` currently a keyword fallback (L1 replaces).
+
+## Ownership (Wave A)
+
+| Agent | Session | Owns | Env file / ports |
+|---|---|---|---|
+| M1 Workflow | S2 | `lib/mastra/index.ts`, `lib/mastra/workflows/`, `lib/engine/` (keeps `RunEngine` API), `app/api/runs/`, `scripts/smoke-mastra.ts` | `.env.s2`, next 3001, demo 4001 |
+| M3 Chat | S2 | `lib/mastra/agents/`, `app/api/chat/`, `components/CommandBar.tsx`, `components/assistant-ui/`, `app/(dashboard)/chat/`, package.json (UI kit only) | `.env.s2`, next 3004 |
+| S4 Email | S4 | `lib/agentmail/`, `lib/triggers/`, `app/api/webhooks/`, `app/api/inbox/`, `scripts/agentmail-*.ts`, `db/migrations/003_*`, `components/Home.tsx` (Today section only), `components/TodayCard.tsx` | `.env.s4`, next 3002, demo 4002 |
+| L1 Retrieval | Leaf | `lib/skills/retrieve.ts`, `db/migrations/002_*`, `scripts/embed-skills.ts`, `app/api/match/` | `.env.leaf` |
+| L2 Sprites | Leaf | `lib/fly/`, `scripts/smoke-sprite.ts` | `.env` (needs `SPRITES_TOKEN`) |
+| L3 Executor | Leaf | `lib/executor/`, `scripts/smoke-executor.ts` | `.env` (needs `EXECUTOR_*`) |
+| L4 Demo site | Leaf | `demo-site/` (v2 layout + Lumen Store returns) | local only |
+| L5 Extension | Leaf | `extension/` | — |
+
+## Interfaces
+- **M1:** `getRunEngine()` keeps the exact `RunEngine` contract and the same events/states, but is
+  backed by a Mastra workflow `choreRun` (suspend at approval, resume on approve, persisted with
+  `PostgresStore` in Neon, observability on). Resume must work after a server restart.
+- **M3:** `CommandBar` (props fixed) + `/chat`: an Assistant UI chat backed by a Mastra agent
+  (Neon gateway model) with tools `findSkill` (→ `matchSkills`) and `startSkillRun` (→ `POST /api/runs`
+  semantics via `getRunEngine().startRun`). Approval stays in the existing run panel; the chat
+  shows a run card with progress and a link.
+- **S4:** inbound email → `classifyEmail` → `matchSkills(classification.skillQuery)` → insert
+  `incoming_triggers` (source `email`, payload with title/merchant/amount/dueLabel/messageId) →
+  appears in `GET /api/today` → Run uses the existing flow.
+- **L1:** `matchSkills` with pgvector cosine over `skill_triggers.embedding` (HNSW), threshold tuned
+  on a phrase set; `embedSkillTriggers(skillId)`; `GET /api/match?q=` for debugging.
+- **L2/L3:** implement `WorkspaceAdapter` / `ToolAdapter`; not yet called by the workflow (Wave B).
+- **L4:** `?layout=v2` (and `POST /api/layout`) changes nav/labels per PLAN S5-H1; new
+  `/store/orders` return flow per PLAN S6-X3. v1 must stay byte-for-byte compatible.
+- **L5:** MV3 extension recording `Recording` objects; posts to `POST {app}/api/teach/recordings`
+  (endpoint is Wave B — the extension also offers "Download JSON").

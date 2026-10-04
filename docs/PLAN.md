@@ -5,6 +5,23 @@
 This is the master plan. Every session reads this file first, then `docs/CONTRACTS.md`
 (created in Session 1), then the relevant `.claude/skills/<sponsor>/SKILL.md` files.
 
+## Current execution: waves (supersedes the session order below)
+
+S1 is done. The remaining sessions are regrouped by real dependencies. Only work that changes
+*how a run executes* waits for the Mastra core; adapters, demo-site pages, email intake, retrieval
+and the extension plug in through contracts and run in parallel.
+
+| Wave | Runs in parallel | Contents |
+|---|---|---|
+| **A (now)** | S2 Core · S4 Email · S-Leaf | **S2:** Mastra workflow (suspend/resume in Neon), Mastra observability, Neon AI Gateway models, Assistant UI chat. **S4:** AgentMail inbox + webhook + classifier → Today card. **S-Leaf:** semantic retrieval (pgvector + gateway embeddings), Sprites adapter, Executor adapter (+ .ics), demo-site v2 layout + Return store, Teach Mode extension recorder |
+| **B (after S2)** | S3+S5 Learn & Heal · S6+S7 Wire-up | Recorder → normalizer → replay; self-heal loop (Exa + Kernel); Sprites/Executor/Return in the workflow; Teach Mode ingest + UI |
+| **C** | S8 Ship | README (draft can start in A), Fly deploy, rehearsal |
+
+Isolation for parallel sessions: one **Neon branch** each (`wave-a-core`, `wave-a-email`,
+`wave-a-leaf`; env files `.env.s2`, `.env.s4`, `.env.leaf`), one **demo site + tunnel** each
+(ports 4001, 4002), separate `next dev` ports (3001–3003), ≤ 5 concurrent Kernel browsers,
+reserved migration numbers (002 retrieval, 003 email), contracts pre-added by the lead.
+
 ## How the work is split
 
 **Sessions** are separate Claude Code conversations. Each has one **lead** (the main

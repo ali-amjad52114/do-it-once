@@ -276,3 +276,89 @@ export type RunStreamFrame =
   | { kind: 'state'; state: RunState; currentStep: number; liveViewUrl: string | null }
   | { kind: 'approval'; approval: Approval }
   | { kind: 'done'; run: SkillRun };
+
+// ═════════════════════════ Wave A additions ═════════════════════════
+
+// ── Semantic skill retrieval (lib/skills/retrieve.ts — agent L1)
+export interface SkillMatch {
+  skillId: string;
+  title: string;
+  score: number; // 0..1 (cosine similarity, or keyword score for the fallback)
+  matchedPhrase: string | null; // the trigger phrase that matched best
+}
+
+// ── Email triggers (lib/triggers — agent S4)
+export interface EmailClassification {
+  actionable: boolean; // false → ignore (newsletters, receipts with nothing to do)
+  kind: 'renewal' | 'purchase' | 'appointment' | 'other';
+  title: string; // short card title: "Membership renewal"
+  merchant: string | null;
+  amount: string | null; // "$19/month"
+  cadence: string | null; // "monthly"
+  dueLabel: string | null; // "Renews tomorrow"
+  skillQuery: string; // what the user would say: "cancel this subscription"
+  confidence: number; // 0..1
+}
+
+// ── Agent workspace (lib/fly — agent L2, Fly.io Sprite)
+export interface WorkspaceFile {
+  path: string; // absolute path inside the Sprite
+  size: number;
+  isDir: boolean;
+}
+
+export interface WorkspaceAdapter {
+  /** Creates the Sprite + /workspace folders if missing. */
+  ensure(): Promise<{ name: string; root: string; url: string | null }>;
+  writeFile(path: string, data: Buffer | string): Promise<void>;
+  readFile(path: string): Promise<Buffer>;
+  list(dir: string): Promise<WorkspaceFile[]>;
+  exec(command: string, opts?: { cwd?: string; timeoutMs?: number }): Promise<{ stdout: string; stderr: string; exitCode: number }>;
+}
+
+// ── API/MCP actions (lib/executor — agent L3, Executor)
+export interface CalendarEventInput {
+  title: string;
+  start: string; // ISO
+  end: string; // ISO
+  location?: string | null;
+  description?: string | null;
+}
+
+export interface ToolActionResult {
+  ok: boolean;
+  via: 'executor' | 'ics'; // Executor MCP call, or the .ics fallback
+  detail: string; // human readable: "Added to Google Calendar"
+  url?: string | null; // link to the created event, if any
+  icsContent?: string | null; // when via = 'ics'
+}
+
+export interface ToolAdapter {
+  createCalendarEvent(input: CalendarEventInput): Promise<ToolActionResult>;
+}
+
+// ── Teach Mode recordings (extension/ — agent L5)
+export interface RecordedTarget {
+  tag: string; // "a", "button", "input"
+  role: string | null; // ARIA role (explicit or implicit)
+  name: string | null; // accessible name
+  text: string | null; // visible text, trimmed, ≤ 80 chars
+  label: string | null; // associated <label> / aria-label / placeholder
+  selector: string | null; // best-effort Playwright selector, e.g. role=link[name="Billing"]
+}
+
+export interface RecordedAction {
+  at: string; // ISO
+  url: string;
+  pageTitle: string;
+  action: 'navigate' | 'click' | 'type' | 'select' | 'submit';
+  target: RecordedTarget | null; // null for navigate
+  value: string | null; // typed/selected value; "[redacted]" for passwords and payment fields
+}
+
+export interface Recording {
+  startedAt: string;
+  endedAt: string;
+  startUrl: string;
+  actions: RecordedAction[];
+}

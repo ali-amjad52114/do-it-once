@@ -5,6 +5,7 @@ import { api, isMockMode } from '@/lib/client/api';
 import { Wordmark } from './Brand';
 import { RunPanel } from './RunPanel';
 import { SkillGrid } from './SkillGrid';
+import { CommandBar } from './CommandBar';
 import { TodayCard } from './TodayCard';
 import { SectionLabel, Spinner } from './ui';
 
@@ -127,6 +128,8 @@ export function Home() {
         <p className="mt-6 max-w-xl text-[17px] leading-relaxed text-ink-soft sm:text-lg">
           Do it once. Your agent does it forever, and checks with you before anything you can’t undo.
         </p>
+        {/* Slot owned by the chat agent (M3): "Get rid of this subscription" → matching skill → run. */}
+        <CommandBar onRunStarted={(id) => setRunId(id)} />
       </section>
 
       <section aria-labelledby="today" className="mb-14">
