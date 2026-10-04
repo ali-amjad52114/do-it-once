@@ -83,6 +83,16 @@ function isSessionGone(err: unknown): boolean {
   return !!err && typeof err === 'object' && (err as { name?: unknown }).name === 'BrowserSessionGoneError';
 }
 
+/**
+ * Demo pacing: each step takes at least STEP_MIN_MS (default 0) so the checklist moves in step with
+ * Kernel's live view, which shows page changes with a short streaming delay. Off in tests.
+ */
+async function paceStep(startedAt: number) {
+  const min = Number(process.env.STEP_MIN_MS ?? 0);
+  const wait = min - (Date.now() - startedAt);
+  if (wait > 0) await new Promise((r) => setTimeout(r, wait));
+}
+
 export function errorMessage(err: unknown): string {
   if (err instanceof Error) return err.message || err.name;
   if (err && typeof err === 'object' && typeof (err as { message?: unknown }).message === 'string') {
@@ -412,6 +422,7 @@ export function createRunCore(deps: RunEngineDeps) {
 
       const urlBefore = ctx.lastUrl;
       await emit(runId, 'step.started', step.intent, { stepSequence: step.sequence, url: urlBefore, usedLocator: null });
+      const stepStartedAt = Date.now();
 
       const span = tracer?.start(step, 'step');
       let outcome: ActionOutcome;
@@ -454,6 +465,7 @@ export function createRunCore(deps: RunEngineDeps) {
         await repo.updateStepLocator(step.id, outcome.usedLocator);
         step.locatorHint = outcome.usedLocator;
       }
+      await paceStep(stepStartedAt);
       await emit(runId, 'step.succeeded', `${step.intent} — done`, {
         stepSequence: step.sequence,
         url: ctx.lastUrl,
