@@ -246,8 +246,79 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     case 'dio:reset':
       return reply(reset());
     default:
+      if (msg.type.startsWith('dio:guide-')) return reply(onGuide(msg, sender));
       return false;
   }
+});
+
+// ── Guide me (A1): state for the guided tab; the content script never clicks ──
+
+const GUIDE_KEY = 'dioGuide';
+
+async function guideAppUrl() {
+  const got = await chrome.storage.local.get('appUrl');
+  return String(got.appUrl || 'http://localhost:3000').replace(/\/+$/, '');
+}
+
+async function guideFetchSkill(skillId) {
+  if (!/^[0-9a-f-]{36}$/i.test(String(skillId))) throw new Error('Unknown skill');
+  const res = await fetch((await guideAppUrl()) + '/api/guide/skills/' + skillId);
+  if (!res.ok) throw new Error('Do It Once answered ' + res.status);
+  return (await res.json()).skill;
+}
+
+async function guideBegin(tabId, skillId) {
+  const skill = await guideFetchSkill(skillId);
+  const state = { tabId, skill, index: 0, acted: null, status: 'active', verified: null };
+  await chrome.storage.session.set({ [GUIDE_KEY]: state });
+  return skill;
+}
+
+async function onGuide(msg, sender) {
+  const tabId = sender.tab ? sender.tab.id : msg.tabId;
+  const got = await chrome.storage.session.get(GUIDE_KEY);
+  const st = got[GUIDE_KEY] || null;
+  switch (msg.type) {
+    case 'dio:guide-begin': // from '#dio-guide=<id>' in a page
+      await guideBegin(tabId, msg.skillId);
+      return true;
+    case 'dio:guide-start': { // from the popup
+      const skill = await guideBegin(msg.tabId, msg.skillId);
+      if (skill.startUrl) await chrome.tabs.update(msg.tabId, { url: skill.startUrl });
+      else await chrome.tabs.sendMessage(msg.tabId, { type: 'dio:guide-refresh' }).catch(() => {});
+      return true;
+    }
+    case 'dio:guide-get':
+      return st && st.tabId === tabId ? st : null;
+    case 'dio:guide-set': {
+      if (!st || st.tabId !== tabId) return false;
+      const p = msg.patch || {};
+      const next = { ...st };
+      for (const k of ['index', 'acted', 'status', 'verified']) if (k in p) next[k] = p[k];
+      await chrome.storage.session.set({ [GUIDE_KEY]: next });
+      return true;
+    }
+    case 'dio:guide-end':
+      await chrome.storage.session.remove(GUIDE_KEY);
+      return true;
+    case 'dio:guide-locate': {
+      const res = await fetch((await guideAppUrl()) + '/api/guide/locate', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(msg.body || {}),
+      });
+      if (!res.ok) throw new Error('Do It Once answered ' + res.status);
+      return res.json();
+    }
+    default:
+      throw new Error('Unknown guide message');
+  }
+}
+
+chrome.tabs.onRemoved.addListener((tabId) => {
+  chrome.storage.session.get(GUIDE_KEY).then((got) => {
+    if (got[GUIDE_KEY] && got[GUIDE_KEY].tabId === tabId) chrome.storage.session.remove(GUIDE_KEY);
+  });
 });
 
 // Restore badge after a worker restart.
