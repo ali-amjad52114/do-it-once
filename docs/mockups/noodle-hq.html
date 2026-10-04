@@ -1,0 +1,310 @@
+<title>Noodle HQ</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,800&family=Nunito+Sans:opsz,wght@6..12,500;6..12,700;6..12,800&display=swap">
+<style>
+/* Layout: an app dashboard with a playful skin — left rail nav, a hero strip with Noodle, then a 2-column board (bills-to-beat + life path | badges + reward). Soft "sticker" cards: 2px ink outline + small offset shadow. */
+:root{
+  --bg:#f5f3ff; --panel:#ffffff; --panel-2:#efecfb; --ink:#1f1a3d; --ink-soft:#5b5680; --ink-faint:#8f8ab0; --edge:#1f1a3d;
+  --grape:#6b4ef6; --grape-soft:#e9e4ff; --pink:#ff7ab6; --pink-soft:#ffe6f1; --mint:#1fb48b; --mint-soft:#dcf7ee;
+  --sun:#ffc83d; --sun-soft:#fff3cf; --coral:#ff6b5a; --coral-soft:#ffe5e1; --sky:#4f9dff; --sky-soft:#e2efff;
+  --shadow:3px 3px 0 var(--edge); --display:'Bricolage Grotesque','Avenir Next','Segoe UI',system-ui,sans-serif; --body:'Nunito Sans','Avenir Next','Segoe UI',system-ui,sans-serif;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --bg:#14112a; --panel:#1d1938; --panel-2:#272246; --ink:#f3f0ff; --ink-soft:#bdb6e6; --ink-faint:#8a83b8; --edge:#0b0918;
+  --grape:#9b85ff; --grape-soft:#2e2660; --pink:#ff8fc2; --pink-soft:#41203a; --mint:#3fd6a9; --mint-soft:#163a35;
+  --sun:#ffd25e; --sun-soft:#3d3218; --coral:#ff8577; --coral-soft:#42201f; --sky:#79b3ff; --sky-soft:#1b2c4d; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#14112a; --panel:#1d1938; --panel-2:#272246; --ink:#f3f0ff; --ink-soft:#bdb6e6; --ink-faint:#8a83b8; --edge:#0b0918;
+  --grape:#9b85ff; --grape-soft:#2e2660; --pink:#ff8fc2; --pink-soft:#41203a; --mint:#3fd6a9; --mint-soft:#163a35;
+  --sun:#ffd25e; --sun-soft:#3d3218; --coral:#ff8577; --coral-soft:#42201f; --sky:#79b3ff; --sky-soft:#1b2c4d; color-scheme:dark}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--body);font-size:15px;line-height:1.5;padding-inline:16px;padding-block:18px 56px}
+h1,h2,h3{font-family:var(--display);font-weight:800;margin:0;letter-spacing:-.01em;text-wrap:balance}
+.num{font-variant-numeric:tabular-nums}
+.app{max-width:1180px;margin:0 auto;display:grid;grid-template-columns:200px minmax(0,1fr);gap:20px}
+.card{background:var(--panel);border:2px solid var(--edge);border-radius:20px;box-shadow:var(--shadow);padding:18px}
+.btn{font-family:var(--display);font-weight:600;font-size:15px;border:2px solid var(--edge);border-radius:14px;padding:8px 16px;cursor:pointer;background:var(--panel);color:var(--ink);box-shadow:2px 2px 0 var(--edge);transition:transform .08s,box-shadow .08s}
+.btn:hover{transform:translate(-1px,-1px);box-shadow:3px 3px 0 var(--edge)}
+.btn:active{transform:translate(2px,2px);box-shadow:0 0 0 var(--edge)}
+.btn:focus-visible{outline:3px solid var(--grape);outline-offset:3px}
+.btn.primary{background:var(--grape);color:#fff}
+.btn.danger{background:var(--coral);color:#fff}
+.btn[disabled]{opacity:.65;cursor:default;transform:none;box-shadow:2px 2px 0 var(--edge)}
+.tag{display:inline-flex;align-items:center;gap:5px;font-size:12px;font-weight:800;padding:2px 9px;border-radius:999px;white-space:nowrap}
+.mock{grid-column:1/-1;justify-self:center;font-size:12px;color:var(--ink-faint);border:1.5px dashed var(--ink-faint);border-radius:999px;padding:3px 12px}
+
+/* rail */
+.rail{display:flex;flex-direction:column;gap:6px;position:sticky;top:calc(16px + env(safe-area-inset-top,0px));align-self:start}
+.logo{display:flex;align-items:center;gap:8px;font-family:var(--display);font-weight:800;font-size:20px;padding:4px 8px 14px}
+.logo i{width:30px;height:30px;border-radius:10px;background:var(--pink);border:2px solid var(--edge);display:inline-block}
+.nav a{display:flex;align-items:center;gap:10px;padding:9px 12px;border-radius:12px;color:var(--ink-soft);text-decoration:none;font-weight:700}
+.nav a.on{background:var(--panel);color:var(--ink);border:2px solid var(--edge);box-shadow:2px 2px 0 var(--edge)}
+.nav a span{width:22px;height:22px;border-radius:7px;display:inline-flex;align-items:center;justify-content:center;font-size:12px;font-weight:800}
+.rail .help{margin-top:12px;background:var(--sun-soft);border:2px solid var(--edge);border-radius:16px;padding:12px;font-size:13px;color:var(--ink)}
+
+.main{display:flex;flex-direction:column;gap:20px;min-width:0}
+
+/* hero */
+.hero{display:grid;grid-template-columns:120px minmax(0,1fr) auto;gap:18px;align-items:center;background:var(--grape-soft)}
+.noodle{width:120px;height:120px;animation:bob 3s ease-in-out infinite}
+.hero h1{font-size:clamp(24px,3.2vw,32px);line-height:1.1}
+.hero p{margin:6px 0 10px;color:var(--ink-soft)}
+.lvl{display:flex;align-items:center;gap:10px;max-width:420px}
+.track{flex:1;height:12px;border-radius:999px;background:var(--panel);border:2px solid var(--edge);overflow:hidden}
+.track div{height:100%;background:var(--grape);transition:width .8s cubic-bezier(.2,.8,.2,1)}
+.stats{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+.stat{background:var(--panel);border:2px solid var(--edge);border-radius:14px;padding:8px 12px;min-width:118px}
+.stat b{display:block;font-family:var(--display);font-size:20px;font-weight:800}
+.stat small{color:var(--ink-soft);font-size:12px;font-weight:700}
+
+.board{display:grid;grid-template-columns:minmax(0,1.3fr) minmax(0,1fr);gap:20px;align-items:start}
+.col{display:flex;flex-direction:column;gap:20px;min-width:0}
+.head{display:flex;justify-content:space-between;align-items:baseline;gap:10px;flex-wrap:wrap;margin-bottom:14px}
+.head h2{font-size:20px}
+.head small{color:var(--ink-faint);font-weight:700}
+
+/* bills to beat */
+.bill{display:grid;grid-template-columns:56px minmax(0,1fr) auto;gap:14px;align-items:center;padding:14px;border:2px solid var(--edge);border-radius:16px;background:var(--panel)}
+.bill+.bill{margin-top:12px}
+.mon{width:56px;height:56px}
+.bill h3{font-size:16px}
+.bill p{margin:1px 0 6px;color:var(--ink-soft);font-size:13px}
+.tags{display:flex;gap:6px;flex-wrap:wrap}
+.hp{display:flex;align-items:center;gap:8px;margin-top:8px;font-size:11px;font-weight:800;color:var(--ink-faint)}
+.hpbar{flex:1;height:8px;border-radius:999px;background:var(--panel-2);overflow:hidden}
+.hpbar div{height:100%;background:var(--coral);border-radius:999px;transition:width .45s ease-out}
+.run{grid-column:1/-1;border-top:2px dashed var(--panel-2);padding-top:12px;display:flex;flex-direction:column;gap:10px;font-size:14px}
+.steps{display:flex;flex-direction:column;gap:4px}
+.steps div{display:flex;gap:8px;align-items:center;color:var(--ink-faint)}
+.steps div.done{color:var(--ink)}
+.steps div i{width:16px;height:16px;border-radius:50%;border:2px solid currentColor;flex:none}
+.steps div.done i{background:var(--mint);border-color:var(--mint)}
+.steps div.now i{border-color:var(--grape);border-top-color:transparent;animation:spin .8s linear infinite}
+.check{background:var(--sun-soft);border:2px solid var(--edge);border-radius:14px;padding:12px;display:flex;gap:12px;align-items:center;flex-wrap:wrap}
+.check span{flex:1;min-width:180px}
+.won{background:var(--mint-soft);border:2px solid var(--edge);border-radius:14px;padding:12px;font-weight:700}
+.shake{animation:shake .35s}
+
+/* path */
+.path{display:flex;align-items:center;gap:0;overflow-x:auto;padding:6px 2px 10px}
+.stop{display:flex;flex-direction:column;align-items:center;gap:6px;min-width:84px;text-align:center;font-size:12px;font-weight:800;color:var(--ink-soft)}
+.dot{width:44px;height:44px;border-radius:50%;border:2px solid var(--edge);display:flex;align-items:center;justify-content:center;font-family:var(--display);font-weight:800;box-shadow:2px 2px 0 var(--edge)}
+.stop.done .dot{background:var(--mint);color:#fff}
+.stop.here .dot{background:var(--sun);animation:pulse 1.6s ease-in-out infinite}
+.stop.lock .dot{background:var(--panel-2);border-style:dashed;box-shadow:none;color:var(--ink-faint)}
+.link{flex:1;min-width:16px;height:4px;border-radius:2px;background:var(--mint);margin-bottom:22px}
+.link.off{background:var(--panel-2)}
+
+/* badges */
+.badges{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px}
+.badge{display:flex;flex-direction:column;align-items:center;gap:6px;text-align:center;font-size:11.5px;font-weight:800;color:var(--ink-soft)}
+.badge .b{width:56px;height:56px;border-radius:18px;border:2px solid var(--edge);display:flex;align-items:center;justify-content:center;font-family:var(--display);font-weight:800;font-size:20px;box-shadow:2px 2px 0 var(--edge);transform:rotate(var(--r,0deg))}
+.badge.off .b{background:var(--panel-2);border-style:dashed;box-shadow:none;color:var(--ink-faint);transform:none}
+.badge.new .b{animation:pop .6s cubic-bezier(.2,.9,.3,1.4)}
+
+/* reward */
+.reward{display:grid;grid-template-columns:64px minmax(0,1fr);gap:14px;align-items:center;background:var(--pink-soft)}
+.reward svg{width:64px;height:64px}
+
+.toast{position:fixed;left:50%;bottom:calc(22px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);background:var(--ink);color:var(--bg);border-radius:14px;padding:10px 16px;font-weight:800;box-shadow:3px 3px 0 var(--grape);max-width:calc(100% - 32px);z-index:5}
+canvas#fx{position:fixed;inset:0;width:100%;height:100%;pointer-events:none;z-index:4}
+
+@keyframes bob{0%,100%{transform:translateY(0) rotate(-2deg)}50%{transform:translateY(-6px) rotate(2deg)}}
+@keyframes spin{to{transform:rotate(360deg)}}
+@keyframes pulse{0%,100%{transform:scale(1)}50%{transform:scale(1.08)}}
+@keyframes shake{0%,100%{transform:translateX(0)}25%{transform:translateX(-5px) rotate(-5deg)}75%{transform:translateX(5px) rotate(5deg)}}
+@keyframes pop{0%{transform:scale(.4) rotate(-20deg)}70%{transform:scale(1.12) rotate(6deg)}100%{transform:scale(1) rotate(var(--r,0deg))}}
+
+@media (max-width:980px){.board{grid-template-columns:minmax(0,1fr)}}
+@media (max-width:820px){.app{grid-template-columns:minmax(0,1fr)}.rail{position:static;flex-direction:row;flex-wrap:wrap;align-items:center}.rail .help{display:none}.logo{padding:4px 8px}.nav{display:flex;gap:4px;flex-wrap:wrap}.hero{grid-template-columns:96px minmax(0,1fr)}.noodle{width:96px;height:96px}.stats{grid-column:1/-1;grid-template-columns:repeat(4,minmax(0,1fr))}}
+@media (max-width:540px){.stats{grid-template-columns:repeat(2,minmax(0,1fr))}.bill{grid-template-columns:48px minmax(0,1fr)}.bill>.btn{grid-column:2;justify-self:start}.mon{width:48px;height:48px}.badges{grid-template-columns:repeat(3,minmax(0,1fr))}}
+@media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+</style>
+
+<div class="app">
+  <span class="mock">Mockup · example data · not connected</span>
+
+  <aside class="rail">
+    <div class="logo"><i aria-hidden="true"></i>Noodle</div>
+    <nav class="nav" aria-label="Sections">
+      <a href="#" class="on"><span style="background:var(--grape-soft);color:var(--grape)">⌂</span>Today</a>
+      <a href="#"><span style="background:var(--pink-soft);color:var(--pink)">?</span>Ask Noodle</a>
+      <a href="#"><span style="background:var(--mint-soft);color:var(--mint)">★</span>Skills</a>
+      <a href="#"><span style="background:var(--sky-soft);color:var(--sky)">↧</span>Files</a>
+      <a href="#"><span style="background:var(--sun-soft);color:#b8860b">+</span>Teach</a>
+    </nav>
+    <div class="help"><b>New here?</b> Do a chore once while Noodle watches. Next time, Noodle does it.</div>
+  </aside>
+
+  <main class="main">
+    <section class="card hero" aria-label="Noodle">
+      <svg class="noodle" viewBox="0 0 120 120" role="img" aria-label="Noodle, a pink cartoon brain">
+        <ellipse cx="60" cy="112" rx="32" ry="5" fill="#000" opacity=".12"/>
+        <g stroke="#1f1a3d" stroke-width="3.5">
+          <circle cx="42" cy="50" r="24" fill="#ff8fc0"/><circle cx="78" cy="50" r="24" fill="#ff8fc0"/>
+          <circle cx="32" cy="74" r="22" fill="#ff8fc0"/><circle cx="88" cy="74" r="22" fill="#ff8fc0"/>
+          <ellipse cx="60" cy="70" rx="35" ry="32" fill="#ff8fc0"/>
+        </g>
+        <path d="M60 32 C56 48 66 56 60 70" fill="none" stroke="#e0559a" stroke-width="3" stroke-linecap="round"/>
+        <circle cx="48" cy="74" r="7" fill="#fff" stroke="#1f1a3d" stroke-width="2.5"/><circle cx="72" cy="74" r="7" fill="#fff" stroke="#1f1a3d" stroke-width="2.5"/>
+        <circle cx="49.5" cy="75.5" r="3.5" fill="#1f1a3d"/><circle cx="73.5" cy="75.5" r="3.5" fill="#1f1a3d"/>
+        <path d="M53 87 q7 6 14 0" fill="none" stroke="#1f1a3d" stroke-width="3" stroke-linecap="round"/>
+        <circle cx="38" cy="84" r="4.5" fill="#ff5fa0" opacity=".55"/><circle cx="82" cy="84" r="4.5" fill="#ff5fa0" opacity=".55"/>
+        <rect x="40" y="56" width="18" height="11" rx="5" fill="none" stroke="#1f1a3d" stroke-width="2.5"/><rect x="62" y="56" width="18" height="11" rx="5" fill="none" stroke="#1f1a3d" stroke-width="2.5"/><path d="M58 61 h4" stroke="#1f1a3d" stroke-width="2.5"/>
+      </svg>
+      <div style="min-width:0">
+        <h1 id="hello">Morning, Ali. Two bills want your money.</h1>
+        <p>Noodle remembers how you handled them last time and can take care of both.</p>
+        <div class="lvl"><span class="tag" style="background:var(--panel);border:2px solid var(--edge)">Lv <span id="level">4</span></span><div class="track" aria-hidden="true"><div id="xpbar" style="width:64%"></div></div><span class="num" style="font-size:12px;font-weight:800;color:var(--ink-soft)"><span id="xp">640</span>/1000 XP</span></div>
+      </div>
+      <div class="stats">
+        <div class="stat"><b class="num" id="coins">$412</b><small>saved a year</small></div>
+        <div class="stat"><b class="num" id="stars">23</b><small>chores with proof</small></div>
+        <div class="stat"><b class="num">6 wk</b><small>no-miss streak</small></div>
+        <div class="stat"><b class="num">12</b><small>skills learned</small></div>
+      </div>
+    </section>
+
+    <div class="board">
+      <div class="col">
+        <section class="card" aria-labelledby="billsH">
+          <div class="head"><h2 id="billsH">Bills to beat</h2><small>from your inbox</small></div>
+
+          <div class="bill" id="b1">
+            <svg class="mon" viewBox="0 0 56 56" aria-hidden="true">
+              <path d="M8 48 Q5 16 28 10 Q51 16 48 48 L41 43 L35 49 L28 43 L21 49 L15 43 Z" fill="#9b85ff" stroke="#1f1a3d" stroke-width="3" stroke-linejoin="round"/>
+              <circle cx="21" cy="27" r="6" fill="#fff" stroke="#1f1a3d" stroke-width="2.5"/><circle cx="36" cy="27" r="6" fill="#fff" stroke="#1f1a3d" stroke-width="2.5"/>
+              <circle cx="22" cy="28" r="2.5" fill="#1f1a3d"/><circle cx="35" cy="28" r="2.5" fill="#1f1a3d"/>
+              <path d="M20 36 h16 l-2.5 4 l-2.5 -4 l-2.5 4 l-2.5 -4 l-2.5 4 z" fill="#fff" stroke="#1f1a3d" stroke-width="2" stroke-linejoin="round"/>
+            </svg>
+            <div style="min-width:0">
+              <h3>Lumen+ Gobbler</h3>
+              <p>Renews Nov 4 · eats $19 a month</p>
+              <div class="tags"><span class="tag" style="background:var(--grape-soft);color:var(--grape)">+40 XP</span><span class="tag" style="background:var(--mint-soft);color:var(--mint)">save $228/yr</span><span class="tag" style="background:var(--coral-soft);color:var(--coral)">4 days left</span></div>
+              <div class="hp"><span>HP</span><div class="hpbar"><div id="hp1" style="width:100%"></div></div></div>
+            </div>
+            <button class="btn primary" id="zap" type="button">Beat it</button>
+          </div>
+
+          <div class="bill">
+            <svg class="mon" viewBox="0 0 56 56" aria-hidden="true">
+              <rect x="9" y="18" width="38" height="30" rx="7" fill="#ffb15c" stroke="#1f1a3d" stroke-width="3"/>
+              <path d="M9 24 L28 12 L47 24" fill="#ffd8a8" stroke="#1f1a3d" stroke-width="3" stroke-linejoin="round"/>
+              <circle cx="21" cy="32" r="5" fill="#fff" stroke="#1f1a3d" stroke-width="2.5"/><circle cx="35" cy="32" r="5" fill="#fff" stroke="#1f1a3d" stroke-width="2.5"/>
+              <circle cx="21" cy="33" r="2.2" fill="#1f1a3d"/><circle cx="35" cy="33" r="2.2" fill="#1f1a3d"/>
+              <path d="M23 41 q5 -3 10 0" fill="none" stroke="#1f1a3d" stroke-width="2.5" stroke-linecap="round"/>
+            </svg>
+            <div style="min-width:0">
+              <h3>Sneaky Box</h3>
+              <p>Aria headphones · return window closes Friday</p>
+              <div class="tags"><span class="tag" style="background:var(--grape-soft);color:var(--grape)">+60 XP</span><span class="tag" style="background:var(--mint-soft);color:var(--mint)">$149 back</span><span class="tag" style="background:var(--coral-soft);color:var(--coral)">3 days left</span></div>
+              <div class="hp"><span>HP</span><div class="hpbar"><div style="width:100%"></div></div></div>
+            </div>
+            <button class="btn" type="button">Beat it</button>
+          </div>
+        </section>
+
+        <section class="card" aria-labelledby="pathH">
+          <div class="head"><h2 id="pathH">Your life path</h2><small>4 of 6 areas</small></div>
+          <div class="path">
+            <div class="stop done"><div class="dot">✓</div>Subscriptions</div><div class="link"></div>
+            <div class="stop done"><div class="dot">✓</div>Shopping</div><div class="link"></div>
+            <div class="stop done"><div class="dot">✓</div>Bills</div><div class="link"></div>
+            <div class="stop here"><div class="dot">!</div>Car stuff</div><div class="link off"></div>
+            <div class="stop lock"><div class="dot">?</div>Appointments</div><div class="link off"></div>
+            <div class="stop lock"><div class="dot">?</div>Travel</div>
+          </div>
+        </section>
+      </div>
+
+      <div class="col">
+        <section class="card" aria-labelledby="badgeH">
+          <div class="head"><h2 id="badgeH">Badges</h2><small id="badgeCount">5 of 8</small></div>
+          <div class="badges">
+            <div class="badge"><div class="b" style="background:var(--pink-soft);--r:-5deg">✂</div>Sub slayer</div>
+            <div class="badge"><div class="b" style="background:var(--sun-soft);--r:4deg">↩</div>Return pro</div>
+            <div class="badge"><div class="b" style="background:var(--sky-soft);--r:-3deg">✓</div>Proof keeper</div>
+            <div class="badge"><div class="b" style="background:var(--grape-soft);--r:5deg">~</div>Self-fixer</div>
+            <div class="badge"><div class="b" style="background:var(--mint-soft);--r:-4deg">6</div>6-week streak</div>
+            <div class="badge off" id="gold"><div class="b">$$</div>$500 saver</div>
+            <div class="badge off"><div class="b">✈</div>Trip planner</div>
+            <div class="badge off"><div class="b">◎</div>Full map</div>
+          </div>
+        </section>
+
+        <section class="card reward" aria-label="Next reward">
+          <svg viewBox="0 0 64 64" aria-hidden="true">
+            <g stroke="#1f1a3d" stroke-width="3" stroke-linejoin="round">
+              <rect x="8" y="28" width="48" height="28" rx="5" fill="#c97b3a"/>
+              <path id="lid" d="M8 28 Q32 6 56 28 Z" fill="#e0954e"/>
+              <rect x="27" y="33" width="10" height="11" rx="2.5" fill="#ffc83d"/>
+            </g>
+          </svg>
+          <div style="min-width:0">
+            <h3 style="font-size:16px">Next reward: sunglasses for Noodle</h3>
+            <p style="margin:2px 0 8px;font-size:13px;color:var(--ink-soft)">Unlocks at $500 a year saved.</p>
+            <div class="track"><div id="chest" style="width:82%;background:var(--pink)"></div></div>
+          </div>
+        </section>
+
+        <section class="card" aria-labelledby="askH">
+          <div class="head"><h2 id="askH">Ask Noodle</h2><small>from your own history</small></div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap">
+            <button class="btn" type="button" data-q="0">What am I still paying for?</button>
+            <button class="btn" type="button" data-q="1">How did I return my last order?</button>
+          </div>
+          <p id="ans" style="margin:12px 0 0;background:var(--panel-2);border-radius:14px;padding:12px;font-size:14px">Tap a question. Noodle answers with proof from your past chores.</p>
+        </section>
+      </div>
+    </div>
+  </main>
+</div>
+
+<canvas id="fx" aria-hidden="true"></canvas>
+<div class="toast" id="toast" hidden role="status" aria-live="polite"></div>
+
+<script>
+(function(){
+  var $=function(id){return document.getElementById(id)};
+  var ANS=['<b>3 subscriptions, $41 a month:</b> cloud storage $3, MealBox $24, News Daily $14. MealBox went up $4 in August. <span class="tag" style="background:var(--panel);border:1.5px solid var(--edge)">3 receipts</span>',
+           '<b>Aria earbuds, Sep 12:</b> refund to your card, QR label for UPS, drop-off reminder the next morning. $89 landed Sep 18. <span class="tag" style="background:var(--panel);border:1.5px solid var(--edge)">label PDF · run #19</span>'];
+  document.querySelectorAll('[data-q]').forEach(function(b){b.addEventListener('click',function(){$('ans').innerHTML=ANS[+b.getAttribute('data-q')]})});
+
+  var tT;function toast(t){var e=$('toast');e.textContent=t;e.hidden=false;clearTimeout(tT);tT=setTimeout(function(){e.hidden=true},3200)}
+  var STEPS=['Open Lumen+ with your saved login','Go to Billing','Open Manage membership','Skip the "stay with us" offer'],HP=[80,58,36,14];
+  var b1=$('b1'),run=null,t=null;
+  function render(i){var h='<div class="steps">';STEPS.forEach(function(s,k){h+='<div class="'+(k<i?'done':k===i?'now':'')+'"><i></i>'+s+'</div>'});return h+'</div>'}
+  function step(i){
+    var m=b1.querySelector('.mon');m.classList.remove('shake');void m.offsetWidth;m.classList.add('shake');
+    $('hp1').style.width=HP[i]+'%';run.innerHTML=render(i);
+    if(i===STEPS.length-1){t=setTimeout(function(){
+      run.innerHTML=render(STEPS.length)+'<div class="check"><span><b>Final hit needs your OK.</b> This cancels $19 a month for good. Nothing has changed yet.</span><button class="btn danger" id="ok" type="button">Approve</button><button class="btn" id="no" type="button">Not now</button></div>';
+      $('ok').addEventListener('click',win);
+      $('no').addEventListener('click',function(){run.innerHTML='<div>Okay, nothing changed. The Gobbler is still around.</div>';$('hp1').style.width='100%';$('zap').disabled=false;$('zap').textContent='Beat it'});
+    },700);return}
+    t=setTimeout(function(){step(i+1)},850);
+  }
+  function count(id,a,b,pre){var s=performance.now();(function f(n){var p=Math.min(1,(n-s)/900);$(id).textContent=(pre||'')+Math.round(a+(b-a)*p);if(p<1)requestAnimationFrame(f)})(s)}
+  function win(){
+    $('hp1').style.width='0%';
+    run.innerHTML='<div class="won">Beaten. Noodle checked the website: "Membership canceled, ends Nov 4". Screenshot saved as proof.</div>';
+    $('zap').textContent='Beaten';
+    count('coins',412,640,'$');count('stars',23,24);count('xp',640,680);$('xpbar').style.width='68%';$('chest').style.width='100%';
+    $('lid').setAttribute('d','M8 28 Q2 6 28 2 Z');
+    var g=$('gold');g.classList.remove('off');g.classList.add('new');g.querySelector('.b').style.background='var(--sun-soft)';g.style.setProperty('--r','4deg');$('badgeCount').textContent='6 of 8';
+    $('hello').textContent='Nice. One bill down, $228 a year saved.';
+    toast('+40 XP · $500 saver badge · sunglasses unlocked');confetti();
+  }
+  $('zap').addEventListener('click',function(){
+    if(!run){run=document.createElement('div');run.className='run';b1.appendChild(run)}
+    $('zap').disabled=true;$('zap').textContent='Working…';clearTimeout(t);step(0);
+  });
+  function confetti(){
+    if(matchMedia('(prefers-reduced-motion: reduce)').matches)return;
+    var c=$('fx'),x=c.getContext('2d'),W=c.width=innerWidth,H=c.height=innerHeight,cols=['#6b4ef6','#ff7ab6','#1fb48b','#ffc83d','#4f9dff'],P=[];
+    for(var i=0;i<110;i++)P.push({x:W*.55,y:H*.35,vx:(Math.random()-.5)*12,vy:-Math.random()*10-3,s:5+Math.random()*6,c:cols[i%5],r:Math.random()*6,vr:(Math.random()-.5)*.3});
+    var st=performance.now();(function f(n){x.clearRect(0,0,W,H);P.forEach(function(p){p.vy+=.3;p.x+=p.vx;p.y+=p.vy;p.r+=p.vr;x.save();x.translate(p.x,p.y);x.rotate(p.r);x.fillStyle=p.c;x.fillRect(-p.s/2,-p.s/4,p.s,p.s/2);x.restore()});if(n-st<2200)requestAnimationFrame(f);else x.clearRect(0,0,W,H)})(st);
+  }
+})();
+</script>

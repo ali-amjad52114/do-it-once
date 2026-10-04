@@ -8,6 +8,8 @@ import { MODELS } from '@/lib/ai/gateway';
 import { matchSkills } from '@/lib/skills/retrieve';
 import { getRunEngine } from '@/lib/engine';
 import * as repo from '@/lib/neon/repo';
+import { invokeExecutorTool, isWriteTool, searchExecutorTools } from '@/lib/executor';
+import { consumeConfirmation, requestConfirmation } from '@/lib/executor/confirmations';
 
 export const CHORE_AGENT_MODEL = `neon/${MODELS.fast}` as const;
 
@@ -83,6 +85,61 @@ export const listSkills = createTool({
   },
 });
 
+/** Cap tool results so one big API response can't flood the model context. */
+const MAX_RESULT_CHARS = 6000;
+
+export const executorSearch = createTool({
+  id: 'executorSearch',
+  description:
+    'Search the API tools connected through Executor (Gmail, Google Calendar/Drive/Docs/Tasks, flights, hotels, weather, ' +
+    'real estate, jobs, tickets, PDFs and ~100 more integrations). Use it when a request can be done through an API ' +
+    'instead of a learned browser chore. Returns tool ids, descriptions, input schemas and whether each tool writes.',
+  inputSchema: z.object({
+    query: z.string().describe('What you want to do, e.g. "send email", "search flights", "weather forecast"'),
+    integration: z.string().optional().describe('Optional integration slug to search within, e.g. google_gmail'),
+  }),
+  execute: async ({ query, integration }) => {
+    try {
+      return { tools: await searchExecutorTools(query, { integration, limit: 8 }) };
+    } catch (e) {
+      return { tools: [], error: e instanceof Error ? e.message : String(e) };
+    }
+  },
+});
+
+export const executorInvoke = createTool({
+  id: 'executorInvoke',
+  description:
+    'Call one Executor tool by the id executorSearch returned, with arguments matching its inputSchema. ' +
+    'Read-only tools run directly. A tool that writes (send, create, book, delete, pay...) first returns ' +
+    'needsConfirmation with a confirmationId and the user sees an Approve button. Only after the user approves, ' +
+    'call again with the same toolId, the same arguments and that confirmationId.',
+  inputSchema: z.object({
+    toolId: z.string().describe('Exact tool id from executorSearch'),
+    arguments: z.record(z.string(), z.unknown()).describe('Arguments matching the tool inputSchema'),
+    confirmationId: z.string().optional().describe('confirmationId from an earlier needsConfirmation result, after the user approved'),
+  }),
+  execute: async ({ toolId, arguments: args, confirmationId }) => {
+    // The model can't approve its own writes: only the user's Approve click (via /api/chat) unlocks the id.
+    if (isWriteTool(toolId) && !consumeConfirmation(confirmationId, toolId, args)) {
+      return {
+        ok: false,
+        needsConfirmation: true,
+        toolId,
+        confirmationId: requestConfirmation(toolId, args),
+        message: 'Waiting for the user to approve this in the chat. Do not claim it is done.',
+      };
+    }
+    try {
+      const result = await invokeExecutorTool(toolId, args);
+      const text = JSON.stringify(result) ?? 'null';
+      return { ok: true, toolId, result: text.length > MAX_RESULT_CHARS ? `${text.slice(0, MAX_RESULT_CHARS)}…(truncated)` : result };
+    } catch (e) {
+      return { ok: false, toolId, error: e instanceof Error ? e.message : String(e) };
+    }
+  },
+});
+
 const INSTRUCTIONS = `You are the user's personal chores agent in "Do It Once". The user taught you web chores once
 (cancel a subscription, return an order, book a haircut...). You replay them for real in a cloud browser.
 
@@ -97,9 +154,16 @@ How to work:
    If their first message is already an explicit, unambiguous order to act now, you may find and start in one turn.
 4. After starting, say it has started and that they can watch it live in the run panel; it will stop and ask for
    their approval before anything irreversible.
+5. If no learned skill fits but the request can be done through an API (email, calendar, files, flights, hotels,
+   weather, listings, tickets...), call executorSearch, pick the best tool, and call executorInvoke with arguments
+   that match its inputSchema. Read-only lookups can run right away. A write (send, create, book, delete, pay)
+   returns needsConfirmation: tell the user in one sentence what you will do and that they can approve it above,
+   then stop. When the user approves, call executorInvoke again with the same toolId, the same arguments and the
+   confirmationId. If it still says needsConfirmation, the user has not approved yet.
 
 Rules:
 - Never claim a chore is done, canceled, paid or confirmed. You only start runs; the run panel shows verified results.
+  For Executor tools, report only what executorInvoke actually returned (ok and its result), never more.
 - Never invent skills, prices or dates. Only use what the tools return.
 - Be brief and warm: at most 2-3 short sentences, plain text, no markdown headings or lists.`;
 
@@ -109,5 +173,5 @@ export const choreAgent = new Agent({
   description: "Finds and starts the user's learned web chores.",
   instructions: INSTRUCTIONS,
   model: CHORE_AGENT_MODEL,
-  tools: { findSkill, startSkillRun, listSkills },
+  tools: { findSkill, startSkillRun, listSkills, executorSearch, executorInvoke },
 });

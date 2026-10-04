@@ -48,6 +48,8 @@ export function ChatPage() {
                   <ChatSuggestion prompt="Get rid of this subscription" />
                   <ChatSuggestion prompt="What chores have I taught you?" />
                   <ChatSuggestion prompt="Can you book my haircut?" />
+                  <ChatSuggestion prompt="What's the weather in San Francisco this weekend?" />
+                  <ChatSuggestion prompt="Find flights from SFO to New York next Friday" />
                 </div>
               </div>
             </AuiIf>

@@ -14,7 +14,11 @@ import {
 } from '@assistant-ui/react';
 import { useChatRuntime } from '@assistant-ui/ai-sdk';
 import { choreToolkit } from './chore-toolkit';
+import { ToolFallbackChip } from './executor-ui';
 import { RunStartedContext, type RunStartedHandler } from './run-context';
+
+/** Approve buttons send "(confirm:<code>)" for the server; hide it from the transcript. */
+const stripConfirmCodes = (text: string) => text.replace(/\s*\(confirm:[a-f0-9]{10}\)/g, '');
 
 const CONFIG = AuiConfig({ tools: Tools({ toolkit: choreToolkit }) });
 
@@ -81,15 +85,24 @@ export function ChatComposer({ placeholder, size = 'md', autoFocus }: { placehol
 
 function Part({ part }: { part: EnrichedPartState }) {
   if (part.type === 'text') {
-    if (!part.text.trim()) return null;
+    const text = stripConfirmCodes(part.text);
+    if (!text.trim()) return null;
     // Replies are plain text; the model occasionally adds **bold**, so render just that.
     return (
       <p className="whitespace-pre-wrap">
-        {part.text.split(/\*\*(.+?)\*\*/g).map((t, i) => (i % 2 ? <strong key={i} className="font-semibold">{t}</strong> : t))}
+        {text.split(/\*\*(.+?)\*\*/g).map((t, i) => (i % 2 ? <strong key={i} className="font-semibold">{t}</strong> : t))}
       </p>
     );
   }
-  if (part.type === 'tool-call') return part.toolUI ? <div className="py-0.5">{part.toolUI}</div> : null;
+  if (part.type === 'tool-call')
+    return <div className="py-0.5">{part.toolUI ?? <ToolFallbackChip toolName={part.toolName} status={part.status} />}</div>;
+  if (part.type === 'reasoning' && part.text.trim())
+    return (
+      <details className="text-[13px] text-ink-faint">
+        <summary className="cursor-pointer select-none">Thought it through</summary>
+        <p className="mt-1 whitespace-pre-wrap border-l-2 border-line pl-3">{part.text}</p>
+      </details>
+    );
   return null;
 }
 

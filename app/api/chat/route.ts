@@ -2,6 +2,7 @@
 import { handleChatStream } from '@mastra/ai-sdk';
 import { createUIMessageStreamResponse, type UIMessage } from 'ai';
 import { getMastra } from '@/lib/mastra';
+import { approveFromUserText } from '@/lib/executor/confirmations';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -15,6 +16,11 @@ export async function POST(req: Request) {
     return Response.json({ error: 'Invalid JSON' }, { status: 400 });
   }
   if (!Array.isArray(body.messages)) return Response.json({ error: 'messages is required' }, { status: 400 });
+
+  // Approve buttons send "(confirm:<code>)" in the user's own message; only that unlocks an Executor write.
+  const lastUser = [...body.messages].reverse().find((m) => m.role === 'user');
+  const userText = (lastUser?.parts ?? []).map((p) => (p.type === 'text' ? p.text : '')).join(' ');
+  approveFromUserText(userText);
 
   // Only forward the conversation: the transport also sends client tool schemas/system, which the
   // server-side agent must not take from the browser.

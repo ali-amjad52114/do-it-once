@@ -1,0 +1,318 @@
+<title>Brain Quest mockup</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@500&display=swap">
+<style>
+/* Layout: one column on phones; on desktop a two-column board — brain + quests left, collection + trophies right. Same paper/ink system as the Do It Once app. */
+:root{
+  --paper:#faf8f5; --paper-deep:#f3efe8; --card:#ffffff; --ink:#1b1a17; --ink-soft:#57534c; --ink-faint:#8e887d;
+  --line:#e9e4dc; --line-strong:#d8d1c5;
+  --xp:#6045a8; --xp-soft:#efeafa; --live:#3b6fd8; --live-soft:#e6eef9;
+  --ok:#059669; --ok-ink:#065f46; --ok-soft:#e7f6ef; --warn:#d97706; --warn-ink:#8a4b06; --warn-soft:#fdf3e2;
+  --locked:#b8b2a7;
+  --display:'Instrument Serif','Iowan Old Style',Georgia,serif; --body:'Inter',ui-sans-serif,system-ui,-apple-system,'Segoe UI',sans-serif; --mono:'JetBrains Mono',ui-monospace,Consolas,monospace;
+  --shadow:0 1px 2px rgb(27 26 23/.04),0 8px 24px -12px rgb(27 26 23/.14);
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --paper:#151412; --paper-deep:#1d1b18; --card:#211f1b; --ink:#f2efe9; --ink-soft:#b9b3a8; --ink-faint:#878176;
+  --line:#2f2c27; --line-strong:#3d3933; --xp:#b6a2f0; --xp-soft:#2a2340; --live:#7ea3ee; --live-soft:#1c2840;
+  --ok:#34d399; --ok-ink:#a7f3d0; --ok-soft:#12302a; --warn:#f59e0b; --warn-ink:#fcd9a0; --warn-soft:#3a2a12; --locked:#5a554d;
+  --shadow:0 1px 2px rgb(0 0 0/.3),0 10px 28px -14px rgb(0 0 0/.6); color-scheme:dark}}
+:root[data-theme="dark"]{
+  --paper:#151412; --paper-deep:#1d1b18; --card:#211f1b; --ink:#f2efe9; --ink-soft:#b9b3a8; --ink-faint:#878176;
+  --line:#2f2c27; --line-strong:#3d3933; --xp:#b6a2f0; --xp-soft:#2a2340; --live:#7ea3ee; --live-soft:#1c2840;
+  --ok:#34d399; --ok-ink:#a7f3d0; --ok-soft:#12302a; --warn:#f59e0b; --warn-ink:#fcd9a0; --warn-soft:#3a2a12; --locked:#5a554d;
+  --shadow:0 1px 2px rgb(0 0 0/.3),0 10px 28px -14px rgb(0 0 0/.6); color-scheme:dark}
+*{box-sizing:border-box}
+body{background:var(--paper);color:var(--ink);font-family:var(--body);font-size:15px;line-height:1.5;padding-inline:16px;padding-block:20px 48px}
+.wrap{max-width:1120px;margin:0 auto;display:flex;flex-direction:column;gap:20px}
+h1,h2,h3{font-weight:400;margin:0;text-wrap:balance}
+h2{font-family:var(--display);font-size:28px;line-height:1.1}
+.eyebrow{font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--ink-faint);font-weight:500}
+.card{background:var(--card);border:1px solid var(--line);border-radius:24px;box-shadow:var(--shadow);padding:20px}
+.num{font-variant-numeric:tabular-nums}
+button{font:inherit;cursor:pointer;border-radius:999px;border:1px solid var(--line-strong);background:var(--card);color:var(--ink);padding:7px 14px;font-size:13px;font-weight:500}
+button:hover{background:var(--paper-deep)}
+button:focus-visible{outline:2px solid var(--live);outline-offset:2px}
+button.primary{background:var(--ink);color:var(--paper);border-color:var(--ink)}
+button.primary:hover{opacity:.88;background:var(--ink)}
+button.approve{background:var(--warn);border-color:var(--warn);color:#fff}
+.chip{display:inline-flex;align-items:center;gap:6px;font-size:12px;font-weight:500;padding:3px 10px;border-radius:999px}
+.mock{align-self:center;background:var(--paper-deep);color:var(--ink-soft);font-size:12px;padding:4px 12px;border-radius:999px}
+
+/* top bar */
+.top{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
+.brand{display:flex;align-items:baseline;gap:10px}
+.brand b{font-family:var(--display);font-weight:400;font-size:26px}
+.brand span{color:var(--ink-faint);font-size:13px}
+
+/* hero: brain level */
+.hero{display:grid;grid-template-columns:auto minmax(0,1fr);gap:24px;align-items:center}
+.ring{position:relative;width:132px;height:132px}
+.ring svg{width:132px;height:132px;transform:rotate(-90deg)}
+.ring .lv{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center}
+.ring .lv b{font-family:var(--display);font-weight:400;font-size:44px;line-height:1}
+.ring .lv span{font-size:11px;color:var(--ink-faint);letter-spacing:.12em;text-transform:uppercase}
+.hero h1{font-family:var(--display);font-size:clamp(30px,4.4vw,44px);line-height:1.05}
+.hero h1 i{color:var(--xp)}
+.xpbar{height:10px;border-radius:999px;background:var(--xp-soft);overflow:hidden;margin:12px 0 6px}
+.xpbar div{height:100%;background:var(--xp);border-radius:999px;transition:width .9s cubic-bezier(.2,.7,.2,1)}
+.stats{display:flex;gap:10px;flex-wrap:wrap;margin-top:14px}
+.stat{background:var(--paper-deep);border-radius:16px;padding:10px 14px;min-width:120px}
+.stat b{display:block;font-size:20px;font-weight:600}
+.stat span{font-size:12px;color:var(--ink-soft)}
+.streak b{color:var(--warn)}
+
+/* grid */
+.board{display:grid;grid-template-columns:minmax(0,1.25fr) minmax(0,1fr);gap:20px;align-items:start}
+.col{display:flex;flex-direction:column;gap:20px;min-width:0}
+.head{display:flex;justify-content:space-between;align-items:baseline;gap:12px;margin-bottom:14px;flex-wrap:wrap}
+
+/* ask */
+.ask{display:flex;gap:8px;flex-wrap:wrap}
+.ask input{flex:1;min-width:200px;font:inherit;padding:10px 16px;border-radius:999px;border:1px solid var(--line-strong);background:var(--paper);color:var(--ink)}
+.suggest{display:flex;gap:6px;flex-wrap:wrap;margin-top:10px}
+.suggest button{font-weight:400;color:var(--ink-soft)}
+.answer{margin-top:14px;background:var(--paper-deep);border-radius:16px;padding:14px 16px}
+.answer p{margin:0 0 8px}
+.src{display:flex;gap:6px;flex-wrap:wrap}
+.src span{font-size:11px;background:var(--card);border:1px solid var(--line);border-radius:999px;padding:2px 9px;color:var(--ink-soft)}
+
+/* quests */
+.quest{display:grid;grid-template-columns:44px minmax(0,1fr) auto;gap:14px;align-items:center;padding:14px 0;border-top:1px solid var(--line)}
+.quest:first-of-type{border-top:0;padding-top:0}
+.qi{width:44px;height:44px;border-radius:14px;display:flex;align-items:center;justify-content:center;font-family:var(--display);font-size:22px}
+.quest h3{font-size:15px;font-weight:600}
+.quest p{margin:2px 0 0;font-size:13px;color:var(--ink-soft)}
+.reward{display:flex;gap:6px;flex-wrap:wrap;margin-top:6px}
+.xpchip{background:var(--xp-soft);color:var(--xp)}
+.money{background:var(--ok-soft);color:var(--ok-ink)}
+.due{background:var(--warn-soft);color:var(--warn-ink)}
+.run{grid-column:1/-1;background:var(--paper-deep);border-radius:16px;padding:12px 14px;font-size:13px;display:flex;flex-direction:column;gap:8px}
+.steps{display:flex;gap:4px}
+.steps i{flex:1;height:6px;border-radius:3px;background:var(--line-strong)}
+.steps i.on{background:var(--live)}
+.steps i.ok{background:var(--ok)}
+.gate{display:flex;align-items:center;gap:10px;flex-wrap:wrap;background:var(--warn-soft);color:var(--warn-ink);border-radius:12px;padding:10px 12px}
+.gate span{flex:1;min-width:160px}
+.done-line{color:var(--ok-ink);font-weight:500}
+
+/* life map */
+.map{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}
+.area{border:1px solid var(--line);border-radius:16px;padding:12px;display:flex;flex-direction:column;gap:6px;min-width:0}
+.area b{font-size:14px;font-weight:600}
+.area small{font-size:12px;color:var(--ink-soft)}
+.meter{height:6px;border-radius:3px;background:var(--paper-deep);overflow:hidden}
+.meter div{height:100%;background:var(--xp)}
+.area.locked{border-style:dashed;color:var(--locked)}
+.area.locked b,.area.locked small{color:var(--locked)}
+
+/* collection */
+.skill{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:4px 12px;padding:12px 0;border-top:1px solid var(--line);align-items:center}
+.skill:first-of-type{border-top:0;padding-top:0}
+.skill h3{font-size:14px;font-weight:600}
+.skill p{margin:0;font-size:12px;color:var(--ink-soft);grid-column:1/-1}
+.tier{font-family:var(--mono);font-size:11px;letter-spacing:.04em;padding:3px 9px;border-radius:999px}
+.t-mastered{background:var(--xp);color:var(--paper)}
+.t-practiced{background:var(--xp-soft);color:var(--xp)}
+.t-learned{background:var(--live-soft);color:var(--live)}
+.t-new{background:var(--paper-deep);color:var(--ink-faint)}
+.pips{display:flex;gap:3px;grid-column:1/-1}
+.pips i{width:14px;height:4px;border-radius:2px;background:var(--line-strong)}
+.pips i.f{background:var(--xp)}
+
+/* trophies */
+.trophies{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+.trophy{display:flex;gap:10px;align-items:center;border:1px solid var(--line);border-radius:16px;padding:10px 12px;min-width:0}
+.medal{flex:none;width:36px;height:36px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-family:var(--display);font-size:18px;background:var(--xp-soft);color:var(--xp)}
+.trophy b{display:block;font-size:13px;font-weight:600}
+.trophy span{font-size:12px;color:var(--ink-soft)}
+.trophy.locked{opacity:.55}
+.trophy.locked .medal{background:var(--paper-deep);color:var(--locked)}
+.trophy.new{border-color:var(--xp);animation:pop .55s cubic-bezier(.2,.9,.25,1.25)}
+
+/* toast */
+.toast{position:fixed;left:50%;bottom:calc(24px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);background:var(--ink);color:var(--paper);border-radius:999px;padding:10px 18px;font-size:14px;font-weight:500;box-shadow:var(--shadow);display:flex;gap:10px;align-items:center;max-width:calc(100% - 32px)}
+.toast b{color:var(--xp-soft)}
+@keyframes pop{0%{transform:scale(.92)}60%{transform:scale(1.03)}100%{transform:scale(1)}}
+@keyframes rise{from{transform:translate(-50%,12px);opacity:0}to{transform:translate(-50%,0);opacity:1}}
+.toast:not([hidden]){animation:rise .35s ease-out}
+
+@media (max-width:860px){.board{grid-template-columns:minmax(0,1fr)}}
+@media (max-width:560px){.hero{grid-template-columns:minmax(0,1fr);justify-items:start}.map{grid-template-columns:repeat(2,minmax(0,1fr))}.trophies{grid-template-columns:minmax(0,1fr)}.quest{grid-template-columns:40px minmax(0,1fr)}.quest>button{grid-column:2;justify-self:start}}
+@media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+</style>
+
+<div class="wrap">
+  <span class="mock">Mockup · example data · nothing here is connected</span>
+
+  <div class="top">
+    <div class="brand"><b>Do it once</b><span>your second brain for life admin</span></div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap"><button>Teach a chore</button><button>Inbox (2)</button></div>
+  </div>
+
+  <section class="card hero" aria-label="Your brain">
+    <div class="ring">
+      <svg viewBox="0 0 132 132" aria-hidden="true">
+        <circle cx="66" cy="66" r="58" fill="none" stroke="var(--xp-soft)" stroke-width="10"/>
+        <circle id="ringArc" cx="66" cy="66" r="58" fill="none" stroke="var(--xp)" stroke-width="10" stroke-linecap="round" stroke-dasharray="364.4" stroke-dashoffset="131" style="transition:stroke-dashoffset .9s cubic-bezier(.2,.7,.2,1)"/>
+      </svg>
+      <div class="lv"><span>Level</span><b id="level">4</b></div>
+    </div>
+    <div style="min-width:0">
+      <p class="eyebrow">Your brain</p>
+      <h1>It remembers <i>12 ways</i> you handle life.</h1>
+      <div class="xpbar" aria-hidden="true"><div id="xpFill" style="width:64%"></div></div>
+      <div class="num" style="font-size:13px;color:var(--ink-soft)"><span id="xpNow">640</span> / 1,000 memory points to <b style="font-weight:600;color:var(--ink)">Level <span id="nextLevel">5</span> · Life admin pro</b></div>
+      <div class="stats">
+        <div class="stat"><b class="num" id="saved">$412</b><span>a year no longer leaking</span></div>
+        <div class="stat"><b class="num" id="hours">3h 20m</b><span>of your time handled</span></div>
+        <div class="stat streak"><b class="num">6 weeks</b><span>no missed deadline</span></div>
+        <div class="stat"><b class="num" id="proofs">23</b><span>chores done with proof</span></div>
+      </div>
+    </div>
+  </section>
+
+  <div class="board">
+    <div class="col">
+
+      <section class="card" aria-labelledby="askH">
+        <div class="head"><h2 id="askH">Ask your brain</h2><span class="eyebrow">answers from your own history</span></div>
+        <form class="ask" id="askForm">
+          <label for="askInput" class="eyebrow" style="position:absolute;left:-9999px">Question</label>
+          <input id="askInput" placeholder="When did I cancel Lumen+?" autocomplete="off">
+          <button class="primary" type="submit">Ask</button>
+        </form>
+        <div class="suggest">
+          <button type="button" data-q="how">How did I return my last order?</button>
+          <button type="button" data-q="subs">What am I still paying for?</button>
+          <button type="button" data-q="due">What's due this month?</button>
+        </div>
+        <div class="answer" id="answer">
+          <p><b style="font-weight:600">You canceled Lumen+ on Oct 4.</b> Access ended Nov 4, and $228 a year stopped. Your brain declined the retention offer for you, as you prefer.</p>
+          <div class="src"><span>Proof screenshot · Oct 4, 2:41 pm</span><span>Run #23 · verified</span><span>Preference: decline offers</span></div>
+        </div>
+      </section>
+
+      <section class="card" aria-labelledby="questH">
+        <div class="head"><h2 id="questH">Today's quests</h2><span class="eyebrow">found in your inbox</span></div>
+        <div id="quests">
+          <div class="quest" id="q1">
+            <div class="qi" style="background:var(--live-soft);color:var(--live)">L</div>
+            <div style="min-width:0">
+              <h3>Lumen+ renews Nov 4 at $19/month</h3>
+              <p>Matches your skill <b style="font-weight:500">Cancel subscription</b> · Mastered</p>
+              <div class="reward"><span class="chip xpchip">+40 memory</span><span class="chip money">saves $228/yr</span><span class="chip due">due in 4 days</span></div>
+            </div>
+            <button class="primary" id="runBtn" type="button">Handle it</button>
+          </div>
+          <div class="quest">
+            <div class="qi" style="background:var(--warn-soft);color:var(--warn-ink)">R</div>
+            <div style="min-width:0">
+              <h3>Return window for Aria headphones closes Friday</h3>
+              <p>Matches <b style="font-weight:500">Return a purchase</b> · Practiced · label goes to your files</p>
+              <div class="reward"><span class="chip xpchip">+60 memory</span><span class="chip money">$149 back</span><span class="chip due">3 days left</span></div>
+            </div>
+            <button type="button">Handle it</button>
+          </div>
+          <div class="quest">
+            <div class="qi" style="background:var(--xp-soft);color:var(--xp)">+</div>
+            <div style="min-width:0">
+              <h3>Teach your brain how you book a haircut</h3>
+              <p>Do it once while it watches. Unlocks the Appointments area.</p>
+              <div class="reward"><span class="chip xpchip">+100 memory</span><span class="chip">new skill</span></div>
+            </div>
+            <button type="button">Teach</button>
+          </div>
+        </div>
+      </section>
+
+      <section class="card" aria-labelledby="mapH">
+        <div class="head"><h2 id="mapH">Your life map</h2><span class="eyebrow">how much your brain knows</span></div>
+        <div class="map">
+          <div class="area"><b>Subscriptions</b><div class="meter"><div style="width:85%"></div></div><small>4 skills · 85%</small></div>
+          <div class="area"><b>Purchases</b><div class="meter"><div style="width:60%"></div></div><small>3 skills · 60%</small></div>
+          <div class="area"><b>Bills</b><div class="meter"><div style="width:40%"></div></div><small>2 skills · 40%</small></div>
+          <div class="area"><b>Car and DMV</b><div class="meter"><div style="width:20%"></div></div><small>1 skill · 20%</small></div>
+          <div class="area locked"><b>Appointments</b><div class="meter"></div><small>Teach 1 chore to unlock</small></div>
+          <div class="area locked"><b>Travel</b><div class="meter"></div><small>Teach 1 chore to unlock</small></div>
+        </div>
+      </section>
+    </div>
+
+    <div class="col">
+      <section class="card" aria-labelledby="colH">
+        <div class="head"><h2 id="colH">Skill collection</h2><span class="eyebrow">12 of 30</span></div>
+        <div class="skill"><h3>Cancel subscription</h3><span class="tier t-mastered" id="cancelTier">MASTERED</span><div class="pips"><i class="f"></i><i class="f"></i><i class="f"></i><i class="f"></i><i class="f"></i></div><p>12 runs · 100% verified · survived 1 website change</p></div>
+        <div class="skill"><h3>Return a purchase</h3><span class="tier t-practiced">PRACTICED</span><div class="pips"><i class="f"></i><i class="f"></i><i class="f"></i><i></i><i></i></div><p>4 runs · knows you want UPS drop-off and refund to card</p></div>
+        <div class="skill"><h3>Download bank statement</h3><span class="tier t-practiced">PRACTICED</span><div class="pips"><i class="f"></i><i class="f"></i><i class="f"></i><i></i><i></i></div><p>Every 1st of the month · saved to your files</p></div>
+        <div class="skill"><h3>Renew car registration</h3><span class="tier t-learned">LEARNED</span><div class="pips"><i class="f"></i><i></i><i></i><i></i><i></i></div><p>1 run · next due March 2027</p></div>
+        <div class="skill"><h3>Book a haircut</h3><span class="tier t-new">NOT LEARNED</span><div class="pips"><i></i><i></i><i></i><i></i><i></i></div><p>Show it once to add it to your brain</p></div>
+      </section>
+
+      <section class="card" aria-labelledby="trophyH">
+        <div class="head"><h2 id="trophyH">Milestones</h2><span class="eyebrow num" id="trophyCount">5 of 8</span></div>
+        <div class="trophies" id="trophies">
+          <div class="trophy"><div class="medal">1</div><div><b>First memory</b><span>Taught your first chore</span></div></div>
+          <div class="trophy"><div class="medal">✓</div><div><b>Trust but verify</b><span>10 chores with proof</span></div></div>
+          <div class="trophy"><div class="medal">~</div><div><b>Shape-shifter</b><span>A skill healed itself</span></div></div>
+          <div class="trophy"><div class="medal">$</div><div><b>Leak plugged</b><span>$200 a year saved</span></div></div>
+          <div class="trophy"><div class="medal">6</div><div><b>On it</b><span>6-week no-miss streak</span></div></div>
+          <div class="trophy locked" id="tSaver"><div class="medal">$$</div><div><b>Money mind</b><span>$500 a year saved</span></div></div>
+          <div class="trophy locked"><div class="medal">◎</div><div><b>Full map</b><span>Unlock every life area</span></div></div>
+          <div class="trophy locked"><div class="medal">25</div><div><b>Old hand</b><span>25 chores with proof</span></div></div>
+        </div>
+      </section>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast" hidden role="status" aria-live="polite"></div>
+
+<script>
+(function(){
+  var $=function(id){return document.getElementById(id)};
+  var answers={
+    how:{t:'<b style="font-weight:600">You returned the Aria earbuds on Sep 12.</b> Refund to your original card, QR label for UPS drop-off, and a calendar reminder the next morning. The refund of $89 landed Sep 18.',s:['Return label PDF · in your files','Run #19 · verified','Calendar: UPS drop-off']},
+    subs:{t:'<b style="font-weight:600">3 active subscriptions, $41 a month.</b> Cloud storage $3, MealBox $24, News Daily $14. Lumen+ is canceled. MealBox went up $4 in August.',s:['Inbox: 3 receipts this month','Price change · Aug 2','Skill: Cancel subscription']},
+    due:{t:'<b style="font-weight:600">2 things this month.</b> Lumen+ renews Nov 4 (you usually cancel it), and the Aria headphones return window closes Friday.',s:['Today quests','Order #A-2291','Renewal email · Oct 31']},
+    def:{t:'<b style="font-weight:600">You canceled Lumen+ on Oct 4.</b> Access ended Nov 4, and $228 a year stopped. Your brain declined the retention offer for you, as you prefer.',s:['Proof screenshot · Oct 4, 2:41 pm','Run #23 · verified','Preference: decline offers']}
+  };
+  function show(key){var a=answers[key]||answers.def;$('answer').innerHTML='<p>'+a.t+'</p><div class="src">'+a.s.map(function(x){return '<span>'+x+'</span>'}).join('')+'</div>';}
+  document.querySelectorAll('[data-q]').forEach(function(b){b.addEventListener('click',function(){$('askInput').value=b.textContent;show(b.getAttribute('data-q'))})});
+  $('askForm').addEventListener('submit',function(e){e.preventDefault();var v=$('askInput').value.toLowerCase();show(/return/.test(v)?'how':/pay|subscri/.test(v)?'subs':/due|month|week/.test(v)?'due':'def')});
+
+  var xp=640,level=4,toastT;
+  function toast(html){var t=$('toast');t.innerHTML=html;t.hidden=false;clearTimeout(toastT);toastT=setTimeout(function(){t.hidden=true},3200)}
+  function addXp(n){
+    xp+=n;
+    if(xp>=1000){xp-=1000;level++;$('level').textContent=level;$('nextLevel').textContent=level+1;toast('Level up · your brain is now <b>Level '+level+'</b>')}
+    $('xpNow').textContent=xp.toLocaleString();$('xpFill').style.width=(xp/10)+'%';
+    $('ringArc').style.strokeDashoffset=String(364.4*(1-xp/1000));
+  }
+
+  var STEPS=['Opening Lumen+ with your saved login','Going to Billing','Opening Manage membership','Declining the retention offer','Ready to cancel'];
+  var q1=$('q1'),panel=null,timer=null;
+  function bar(i,done){var h='';for(var k=0;k<STEPS.length;k++)h+='<i class="'+(done||k<i?'ok':k===i?'on':'')+'"></i>';return '<div class="steps" aria-hidden="true">'+h+'</div>'}
+  function step(i){
+    panel.innerHTML=bar(i)+'<div>'+STEPS[i]+'…</div>';
+    if(i===STEPS.length-1){
+      panel.innerHTML=bar(i)+'<div class="gate"><span><b style="font-weight:600">Cancel your $19/month membership?</b> Nothing has changed yet.</span><button class="approve" type="button" id="approveBtn">Approve</button><button type="button" id="stopBtn">Stop</button></div>';
+      $('approveBtn').addEventListener('click',approve);$('stopBtn').addEventListener('click',stop);return;
+    }
+    timer=setTimeout(function(){step(i+1)},750);
+  }
+  function approve(){
+    panel.innerHTML=bar(0,true)+'<div class="done-line">Canceled and verified · "Membership canceled, ends Nov 4" · proof saved</div>';
+    $('runBtn').textContent='Done';$('runBtn').disabled=true;
+    addXp(40);$('saved').textContent='$640';$('proofs').textContent='24';$('hours').textContent='3h 32m';
+    var t=$('tSaver');t.classList.remove('locked');t.classList.add('new');$('trophyCount').textContent='6 of 8';
+    toast('+40 memory · <b>Money mind</b> unlocked · $640 a year saved');
+  }
+  function stop(){clearTimeout(timer);panel.innerHTML='<div>Stopped. Your membership is unchanged.</div>';$('runBtn').disabled=false;$('runBtn').textContent='Handle it'}
+  $('runBtn').addEventListener('click',function(){
+    if(!panel){panel=document.createElement('div');panel.className='run';q1.appendChild(panel)}
+    $('runBtn').disabled=true;$('runBtn').textContent='Working…';clearTimeout(timer);step(0);
+  });
+})();
+</script>

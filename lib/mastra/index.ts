@@ -16,7 +16,7 @@ import { traceIdForRun } from '@/lib/engine/engine';
 import { agents } from './agents';
 import { workflows } from './workflows';
 
-const g = globalThis as typeof globalThis & { __doItOnceMastra?: Mastra };
+const g = globalThis as typeof globalThis & { __doItOnceMastra?: Mastra; __doItOnceMastraAgents?: typeof agents };
 
 function createMastra(): Mastra {
   const connectionString = process.env.DATABASE_URL;
@@ -43,7 +43,11 @@ function createMastra(): Mastra {
 }
 
 export function getMastra(): Mastra {
-  g.__doItOnceMastra ??= createMastra();
+  // Rebuild when hot reload hands us a new agents module, so agent/tool edits apply without a restart.
+  if (!g.__doItOnceMastra || g.__doItOnceMastraAgents !== agents) {
+    g.__doItOnceMastra = createMastra();
+    g.__doItOnceMastraAgents = agents;
+  }
   return g.__doItOnceMastra;
 }
 

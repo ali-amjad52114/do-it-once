@@ -192,6 +192,76 @@ export function getToolAdapter(): ToolAdapter {
   return createToolAdapter();
 }
 
+// ───────── generic tool access (agent: search any connected integration, then invoke) ─────────
+
+export interface ExecutorToolHit {
+  id: string;
+  integration: string | null;
+  description: string;
+  inputSchema: Record<string, unknown> | null;
+  /** True when the tool looks like it changes something (create/send/delete/book...). */
+  writes: boolean;
+}
+
+const WRITE_VERBS =
+  /(^|[._/-])(insert|create|add|update|patch|put|post|delete|remove|clear|move|import|send|reply|forward|draft|trash|modify|set|book|reserve|purchase|buy|order|pay|checkout|cancel|submit|upload|share|stop|watch|publish)/i;
+
+/** Heuristic: does this Executor tool id describe a write action? Exported for tests. */
+export function isWriteTool(toolId: string): boolean {
+  const name = toolId.split('.').slice(-2).join('.');
+  return WRITE_VERBS.test(name);
+}
+
+function integrationOf(toolId: string): string | null {
+  const m = /^tools\.([^.]+)\./.exec(toolId);
+  return m ? m[1] : null;
+}
+
+async function withLease<T>(fn: (client: McpLike) => Promise<T>, deps: Pick<ToolAdapterDeps, 'config' | 'connect' | 'cache'> = {}) {
+  const cfg = deps.config === undefined ? readExecutorConfig() : deps.config;
+  if (!cfg) throw new Error('Executor not configured: set EXECUTOR_MCP_URL + EXECUTOR_API_KEY');
+  const lease = await acquire(cfg, deps);
+  let broken = false;
+  try {
+    return await fn(lease.client);
+  } catch (e) {
+    broken = true;
+    throw e;
+  } finally {
+    await lease.release(broken);
+  }
+}
+
+/** Search every connected Executor integration for tools matching a plain-language query. */
+export async function searchExecutorTools(
+  query: string,
+  opts: { integration?: string; limit?: number } & Pick<ToolAdapterDeps, 'config' | 'connect' | 'cache'> = {},
+): Promise<ExecutorToolHit[]> {
+  const { integration, limit = 8, ...deps } = opts;
+  const raw = await withLease(
+    (c) => call(c, 'search', integration ? { query, integration } : { query }),
+    deps,
+  );
+  return extractSearchItems(raw)
+    .slice(0, limit)
+    .map((t) => ({
+      id: t.id,
+      integration: integrationOf(t.id),
+      description: t.description.slice(0, 400),
+      inputSchema: t.inputSchema,
+      writes: isWriteTool(t.id),
+    }));
+}
+
+/** Invoke one Executor tool by id with JSON arguments. Returns the unwrapped result. */
+export async function invokeExecutorTool(
+  toolId: string,
+  args: Record<string, unknown>,
+  deps: Pick<ToolAdapterDeps, 'config' | 'connect' | 'cache'> = {},
+): Promise<unknown> {
+  return withLease(async (c) => unwrapExecutorResult(await call(c, 'invoke', { tool: toolId, arguments: args })), deps);
+}
+
 export interface ExecutorToolsReport {
   transport: string;
   mcpTools: string[];

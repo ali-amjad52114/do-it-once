@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { CalendarEventInput } from '@/lib/contracts';
-import { createToolAdapter, listExecutorTools } from './index';
+import { createToolAdapter, invokeExecutorTool, isWriteTool, listExecutorTools, searchExecutorTools } from './index';
 import { buildInsertArguments, extractEventLink, extractSearchItems, pickCalendarInsertTool, readExecutorConfig, resolveExecutorBin, type McpLike } from './mcp';
 
 const input: CalendarEventInput = {
@@ -208,5 +208,47 @@ describe('argument mapping', () => {
   });
   it('finds htmlLink in nested results', () => {
     expect(extractEventLink({ result: { body: { kind: 'calendar#event', id: 'e', htmlLink: 'https://g/e' } } })).toEqual({ url: 'https://g/e', id: 'e' });
+  });
+});
+
+describe('generic Executor tools', () => {
+  it('flags write tools by their action name', () => {
+    expect(isWriteTool('tools.google_gmail.user.personal.gmail.users.messages.send')).toBe(true);
+    expect(isWriteTool('tools.google_calendar.org.ws.calendar.events.insert')).toBe(true);
+    expect(isWriteTool('tools.google_calendar.org.ws.calendar.events.list')).toBe(false);
+    expect(isWriteTool('tools.kiwi_com.user.personalKiwiMcp.search_flight')).toBe(false);
+    expect(isWriteTool('tools.tomorrow_io_weather.user.p.get_forecast')).toBe(false);
+  });
+
+  it('searches with an optional integration filter and tags hits', async () => {
+    const client = mockClient({
+      search: () => text({ items: [{ id: 'tools.google_gmail.user.p.gmail.users.messages.send', description: 'Send mail', inputSchema: {} }] }),
+    });
+    const hits = await searchExecutorTools('send email', { integration: 'google_gmail', config: cfg, connect: async () => client });
+    expect(client.calls[0]).toEqual({ name: 'search', arguments: { query: 'send email', integration: 'google_gmail' } });
+    expect(hits).toEqual([
+      { id: 'tools.google_gmail.user.p.gmail.users.messages.send', integration: 'google_gmail', description: 'Send mail', inputSchema: {}, writes: true },
+    ]);
+  });
+
+  it('invokes a tool and unwraps {ok,data}', async () => {
+    const client = mockClient({ invoke: () => text({ ok: true, data: { temp: 21 } }) });
+    const out = await invokeExecutorTool('tools.x.user.p.get_forecast', { city: 'SF' }, { config: cfg, connect: async () => client });
+    expect(client.calls[0]).toEqual({ name: 'invoke', arguments: { tool: 'tools.x.user.p.get_forecast', arguments: { city: 'SF' } } });
+    expect(out).toEqual({ temp: 21 });
+  });
+});
+
+describe('write confirmations', () => {
+  it('only unlocks a write after the user message carries its code', async () => {
+    const { approveFromUserText, consumeConfirmation, requestConfirmation } = await import('./confirmations');
+    const args = { tasklist: 'x', body: { title: 'Buy milk' } };
+    const id = requestConfirmation('tools.google_tasks.user.p.tasks.insert', args);
+    expect(consumeConfirmation(id, 'tools.google_tasks.user.p.tasks.insert', args)).toBe(false); // model alone can't
+    expect(approveFromUserText(`Yes, go ahead. (confirm:${id})`)).toEqual([id]);
+    expect(consumeConfirmation(id, 'tools.google_tasks.user.p.tasks.insert', { ...args, tasklist: 'y' })).toBe(false); // other args
+    expect(consumeConfirmation(id, 'tools.google_tasks.user.p.tasks.insert', { ...args, body: { title: 'Buy beer' } })).toBe(false); // nested change
+    expect(consumeConfirmation(id, 'tools.google_tasks.user.p.tasks.insert', args)).toBe(true);
+    expect(consumeConfirmation(id, 'tools.google_tasks.user.p.tasks.insert', args)).toBe(false); // one-time
   });
 });

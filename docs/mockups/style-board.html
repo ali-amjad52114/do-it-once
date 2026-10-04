@@ -1,0 +1,232 @@
+<title>Art Style Board</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bangers&family=Baloo+2:wght@600;800&family=Bricolage+Grotesque:opsz,wght@12..96,700;12..96,800&family=Fredoka:wght@500;700&family=Gochi+Hand&family=Lilita+One&family=M+PLUS+Rounded+1c:wght@700;800&family=Nunito+Sans:opsz,wght@6..12,600;6..12,800&family=Orbitron:wght@700;900&family=Outfit:wght@500;800&family=Press+Start+2P&family=Silkscreen&family=Fraunces:opsz,wght@9..144,700&display=swap">
+<style>
+/* Layout: a style casting board — intro, then a grid of large cards; each card's stage is the same scene (buddy vs. the $19 bill) drawn in a different art style. Sticky pick bar at the bottom. One committed light look for the page chrome. */
+:root{
+  --bg:#f4f2ee; --panel:#ffffff; --ink:#1c1a24; --ink-soft:#5a5666; --ink-faint:#8d8898; --edge:#1c1a24; --pick:#6b4ef6;
+  --display:'Bricolage Grotesque','Avenir Next','Segoe UI',system-ui,sans-serif; --body:'Nunito Sans','Avenir Next','Segoe UI',system-ui,sans-serif;
+  color-scheme:light;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--body);font-weight:600;font-size:15px;line-height:1.45;padding-inline:16px;padding-block:20px 110px}
+h1,h2,h3{font-family:var(--display);font-weight:800;margin:0;letter-spacing:-.01em;text-wrap:balance}
+.wrap{max-width:1280px;margin:0 auto;display:flex;flex-direction:column;gap:18px}
+.intro{display:flex;justify-content:space-between;align-items:flex-end;gap:16px;flex-wrap:wrap}
+.intro h1{font-size:clamp(28px,4vw,40px)}
+.intro p{margin:6px 0 0;color:var(--ink-soft);max-width:64ch}
+.mock{font-size:12px;color:var(--ink-faint);border:1.5px dashed var(--ink-faint);border-radius:999px;padding:3px 12px}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:18px}
+.card{background:var(--panel);border:2px solid var(--edge);border-radius:20px;box-shadow:3px 3px 0 var(--edge);overflow:hidden;display:flex;flex-direction:column;cursor:pointer;transition:transform .1s,box-shadow .1s}
+.card:hover{transform:translate(-2px,-2px);box-shadow:5px 5px 0 var(--edge)}
+.card:focus-visible{outline:3px solid var(--pick);outline-offset:3px}
+.card.sel{box-shadow:5px 5px 0 var(--edge),0 0 0 4px var(--pick)}
+.stage{border-bottom:2px solid var(--edge);line-height:0}
+.stage svg{width:100%;height:auto;display:block}
+.info{padding:12px 14px 14px;display:flex;flex-direction:column;gap:6px}
+.info .like{font-size:11px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-faint)}
+.info h3{font-size:19px}
+.info p{margin:0;font-size:13px;color:var(--ink-soft)}
+.meta{display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;margin-top:4px}
+.sw{display:flex;gap:4px}
+.sw i{width:18px;height:18px;border-radius:5px;border:1.5px solid var(--edge);display:block}
+.fit{font-size:11px;font-weight:800;border:1.5px solid var(--edge);border-radius:999px;padding:1px 8px}
+.pickbar{position:fixed;left:50%;bottom:calc(16px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);background:var(--ink);color:#fff;border-radius:18px;padding:10px 12px 10px 16px;display:flex;align-items:center;gap:12px;flex-wrap:wrap;box-shadow:3px 3px 0 var(--pick);max-width:calc(100% - 32px);z-index:3}
+.pickbar code{background:#2d2a3a;border-radius:8px;padding:4px 8px;font-size:13px;color:#e9e4ff;user-select:all}
+.pickbar button{font:inherit;font-size:13px;border:1.5px solid #fff;background:transparent;color:#fff;border-radius:10px;padding:4px 10px;cursor:pointer}
+@media (prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+
+<div class="wrap">
+  <div class="intro">
+    <div>
+      <h1>Pick an art style</h1>
+      <p>Same scene in every card: your brain buddy and a $19-a-month bill monster. Only the art style changes. Tap a card to choose it.</p>
+    </div>
+    <span class="mock">Mockup · original art, style references only</span>
+  </div>
+  <div class="grid" id="grid"></div>
+</div>
+
+<div class="pickbar" role="status" aria-live="polite"><span>Your pick:</span><code id="pick">Build it in Creature card style</code><button id="copy" type="button">Copy</button></div>
+
+<script>
+(function(){
+  var K='#1c1a24';
+  function px(rows,map,s,ox,oy){var o='';rows.forEach(function(r,y){for(var x=0;x<r.length;x++){var c=map[r[x]];if(c)o+='<rect x="'+(ox+x*s)+'" y="'+(oy+y*s)+'" width="'+s+'" height="'+s+'" fill="'+c+'"/>'}});return o}
+  var BRAIN=["...PPPPPP...","..PPDPPDPP..",".PPPPDPPPPP.","PPDPPPPPDPPP","PPPWKPPWKPPP","PPPWKPPWKPPP","PBPPPPPPPPBP","PPPPKPPKPPPP",".PPPPKKPPPP.","..PPPPPPPP.."];
+  var GOB=["...GGGG...",".GGGGGGGG.","GGWKGGWKGG","GGWKGGWKGG","GGGGGGGGGG","GWGWGWGWGG","GGGGGGGGGG","G.GG.GG.GG"];
+  /* vector brain buddy, reused in several styles */
+  function brain(o){o=o||{};var m=o.main||'#ff8fc0',d=o.dark||'#e0559a',st=o.stroke||K,w=o.sw==null?3.5:o.sw,t=o.t||'',fill=function(){return 'fill="'+m+'" stroke="'+st+'" stroke-width="'+w+'"'};
+    return '<g transform="'+t+'"><circle cx="42" cy="50" r="24" '+fill()+'/><circle cx="78" cy="50" r="24" '+fill()+'/><circle cx="32" cy="74" r="22" '+fill()+'/><circle cx="88" cy="74" r="22" '+fill()+'/><ellipse cx="60" cy="70" rx="35" ry="32" fill="'+m+'"/>'+
+      '<path d="M60 32 C56 48 66 56 60 70" fill="none" stroke="'+d+'" stroke-width="3" stroke-linecap="round"/>'+(o.eyes||'<circle cx="48" cy="74" r="7" fill="#fff" stroke="'+st+'" stroke-width="2.5"/><circle cx="72" cy="74" r="7" fill="#fff" stroke="'+st+'" stroke-width="2.5"/><circle cx="49.5" cy="75.5" r="3.5" fill="'+st+'"/><circle cx="73.5" cy="75.5" r="3.5" fill="'+st+'"/>')+
+      '<path d="M53 87 q7 6 14 0" fill="none" stroke="'+st+'" stroke-width="3" stroke-linecap="round"/><circle cx="37" cy="84" r="4.5" fill="'+d+'" opacity=".45"/><circle cx="83" cy="84" r="4.5" fill="'+d+'" opacity=".45"/></g>'}
+  function gob(o){o=o||{};var m=o.main||'#9b85ff',st=o.stroke||K,w=o.sw==null?3:o.sw;
+    return '<g transform="'+(o.t||'')+'"><path d="M8 48 Q5 16 28 10 Q51 16 48 48 L41 43 L35 49 L28 43 L21 49 L15 43 Z" fill="'+m+'" stroke="'+st+'" stroke-width="'+w+'" stroke-linejoin="round"/><circle cx="21" cy="27" r="6" fill="#fff" stroke="'+st+'" stroke-width="2.5"/><circle cx="36" cy="27" r="6" fill="#fff" stroke="'+st+'" stroke-width="2.5"/><circle cx="22" cy="28" r="2.5" fill="'+st+'"/><circle cx="35" cy="28" r="2.5" fill="'+st+'"/><path d="M20 36 h16 l-2.5 4 l-2.5 -4 l-2.5 4 l-2.5 -4 l-2.5 4 z" fill="#fff" stroke="'+st+'" stroke-width="2" stroke-linejoin="round"/></g>'}
+  function T(x,y,txt,f,sz,fill,extra){return '<text x="'+x+'" y="'+y+'" font-family="'+f+'" font-size="'+sz+'" fill="'+fill+'" '+(extra||'')+'>'+txt+'</text>'}
+
+  var STYLES=[
+   {id:'creature',name:'Creature card',like:'Pokémon-like',fit:'Collectible',sw:['#f7d64a','#7b5cff','#ff8fc0','#fff8dc'],
+    p:'Every skill is a trading card with HP, a type and moves. Collecting skills feels like building a deck.',
+    s:function(){return '<svg viewBox="0 0 320 230" role="img" aria-label="Trading-card style">'+
+      '<rect width="320" height="230" fill="#2b2e4a"/><rect x="74" y="8" width="172" height="214" rx="12" fill="#f7d64a" stroke="'+K+'" stroke-width="2"/>'+
+      '<rect x="82" y="16" width="156" height="198" rx="8" fill="#fff8dc"/>'+T(90,32,'Noodlemon','Lilita One',14,K)+T(172,32,'HP 120','Lilita One',12,'#d6336c')+
+      '<circle cx="230" cy="27" r="7" fill="#7b5cff" stroke="'+K+'" stroke-width="1.5"/>'+
+      '<defs><linearGradient id="cr" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#ffd6ec"/><stop offset=".5" stroke="" stop-color="#e3dcff"/><stop offset="1" stop-color="#d6f5ff"/></linearGradient></defs>'+
+      '<rect x="90" y="38" width="140" height="86" fill="url(#cr)" stroke="#c9a227" stroke-width="3"/>'+brain({t:'translate(118 34) scale(.72)'})+
+      T(92,136,'Psychic · Memory type','Nunito Sans',8,'#7a6a2a','font-style="italic"')+
+      '<line x1="90" y1="142" x2="230" y2="142" stroke="#e2c86a"/>'+T(92,158,'◉ Remember','Lilita One',11,K)+T(92,170,'Recalls how you did it last time.','Nunito Sans',8,'#555')+
+      '<line x1="90" y1="178" x2="230" y2="178" stroke="#e2c86a"/>'+T(92,194,'◉◉ Cancel Beam','Lilita One',11,K)+T(208,194,'228','Lilita One',14,K)+
+      T(92,208,'weakness: retention offers ×2','Nunito Sans',7.5,'#7a6a2a')+'</svg>'}},
+
+   {id:'voxel',name:'Blocky voxel',like:'Minecraft-like',fit:'Builder',sw:['#7cc04b','#8b5a2b','#ff8fc0','#6ec6ff'],
+    p:'Chunky pixel blocks, a hotbar of skills, hearts and an XP bar. Skills are "crafted" from things you did.',
+    s:function(){var top=["PPPPPPPP","PDPPPDPP","PPPDPPPP","PPPPPPDP","PDPPPPPP","PPPPDPPP","PPDPPPPP","PPPPPPPP"],left=["PPPPPPPP","PPPPPPPP","PWKPPWKP","PWKPPWKP","PPPPPPPP","PBPKKPBP","PPPPPPPP","PPPPPPPP"],right=["QQQQQQQQ","QDQQQDQQ","QQQQQQQQ","QQDQQQQQ","QQQQQQDQ","QQQQQQQQ","QDQQQQQQ","QQQQQQQQ"];
+      var M={P:'#ff9cc8',D:'#e45f9f',W:'#fff',K:'#2b2b2b',B:'#ff6fae',Q:'#e07aae'};var s=8,x0=96,y0=70;
+      var hot='';for(var i=0;i<6;i++)hot+='<rect x="'+(70+i*30)+'" y="196" width="28" height="28" fill="#8b8b8b" stroke="#373737" stroke-width="2"/>';
+      return '<svg viewBox="0 0 320 230" shape-rendering="crispEdges" role="img" aria-label="Blocky voxel style"><rect width="320" height="230" fill="#8fd0ff"/><rect x="250" y="20" width="36" height="36" fill="#fff8b0"/>'+
+      '<rect x="0" y="168" width="320" height="12" fill="#6fb33c"/><rect x="0" y="180" width="320" height="50" fill="#8b5a2b"/>'+px(["G.GG..G.GG.G..GG.G.G..GG.G..G.GG.G..G.GG"],{G:'#4f8f2a'},8,0,176)+
+      '<g transform="matrix(1,-0.5,1,0.5,'+x0+','+y0+')">'+px(top,M,s,0,0)+'</g><g transform="matrix(1,0.5,0,1,'+x0+','+y0+')">'+px(left,M,s,0,0)+'</g><g transform="matrix(1,-0.5,0,1,'+(x0+64)+','+(y0+32)+')">'+px(right,M,s,0,0)+'</g>'+
+      px(GOB,{G:'#8a63ff',W:'#fff',K:'#222'},5,232,124)+hot+
+      '<rect x="72" y="198" width="24" height="24" fill="#b5b5b5" stroke="#fff" stroke-width="2"/>'+px(["..YY..",".YYYY.","YYKYYY","YYYYYY",".YYYY.","..YY.."],{Y:'#ffcf3a',K:'#b8860b'},3,75,201)+
+      px(["WWWWW","W...W","WWWWW","W...W","WWWWW"],{W:'#f2f2f2'},4,108,202)+px(["BBBBB","BTTTB","BBBBB","BBBBB"],{B:'#c98b4a',T:'#8b5a2b'},4,138,204)+
+      '<rect x="70" y="186" width="178" height="5" fill="#2b2b2b"/><rect x="70" y="186" width="112" height="5" fill="#7cfc4a"/>'+
+      T(16,26,'Gobbler spawned!','Silkscreen',12,'#fff','stroke="#2b2b2b" stroke-width="3" paint-order="stroke"')+T(16,42,'Right-click to cancel','Silkscreen',9,'#2b2b2b')+'</svg>'}},
+
+   {id:'pixel',name:'8-bit RPG battle',like:'Retro arcade / NES',fit:'Nostalgic',sw:['#000000','#ffffff','#ff5c8a','#8a63ff'],
+    p:'Every bill is a turn-based battle. "A wild GOBBLER appeared!" Menus, HP and a big final move.',
+    s:function(){return '<svg viewBox="0 0 320 230" shape-rendering="crispEdges" role="img" aria-label="8-bit RPG style"><rect width="320" height="230" fill="#000"/>'+
+      '<rect x="8" y="8" width="304" height="100" fill="#10102a"/>'+px(GOB,{G:'#8a63ff',W:'#fff',K:'#000'},7,190,30)+px(BRAIN,{P:'#ff7aa8',D:'#d43f7f',W:'#fff',K:'#000',B:'#ff3d7f'},6,34,44)+
+      T(186,26,'GOBBLER','Press Start 2P',8,'#fff')+'<rect x="186" y="14" width="0" height="0"/>'+'<rect x="252" y="20" width="50" height="5" fill="#333"/><rect x="252" y="20" width="36" height="5" fill="#ff3b3b"/>'+
+      '<rect x="10" y="114" width="300" height="108" fill="#000" stroke="#fff" stroke-width="3"/><rect x="16" y="120" width="288" height="96" fill="none" stroke="#fff" stroke-width="1"/>'+
+      T(26,142,'A wild GOBBLER','Press Start 2P',9,'#fff')+T(26,158,'appeared! It eats $19.','Press Start 2P',9,'#fff')+
+      T(26,188,'▶ ZAP','Press Start 2P',10,'#ffd23f')+T(116,188,'RECALL','Press Start 2P',10,'#fff')+T(222,188,'RUN','Press Start 2P',10,'#fff')+
+      T(26,208,'NOODLE LV4  HP 40/40','Press Start 2P',8,'#7cfc4a')+'</svg>'}},
+
+   {id:'kawaii',name:'Kawaii anime',like:'Sanrio / chibi',fit:'Cute',sw:['#ffd1e8','#cdb8ff','#b8f0e0','#ff6fae'],
+    p:'Pastels, sparkles, huge shiny eyes and gentle speech. Very soft, very friendly.',
+    s:function(){var eyes='<ellipse cx="47" cy="74" rx="8" ry="10" fill="#3b2a4f"/><ellipse cx="73" cy="74" rx="8" ry="10" fill="#3b2a4f"/><circle cx="44" cy="70" r="3.2" fill="#fff"/><circle cx="70" cy="70" r="3.2" fill="#fff"/><circle cx="50" cy="79" r="1.6" fill="#fff"/><circle cx="76" cy="79" r="1.6" fill="#fff"/>';
+      var sp=function(x,y,r,c){return '<path d="M'+x+' '+(y-r)+' Q'+x+' '+y+' '+(x+r)+' '+y+' Q'+x+' '+y+' '+x+' '+(y+r)+' Q'+x+' '+y+' '+(x-r)+' '+y+' Q'+x+' '+y+' '+x+' '+(y-r)+'Z" fill="'+c+'"/>'};
+      return '<svg viewBox="0 0 320 230" role="img" aria-label="Kawaii anime style"><rect width="320" height="230" fill="#fff0f7"/><circle cx="60" cy="40" r="60" fill="#ffe0ef"/><circle cx="280" cy="200" r="70" fill="#ece4ff"/>'+
+      sp(40,30,9,'#ffb3d6')+sp(290,40,7,'#c3b0ff')+sp(250,130,6,'#ffcf5a')+sp(30,190,7,'#9fe6d0')+
+      brain({main:'#ffc4de',dark:'#ff7ab6',stroke:'#7a4a6a',sw:2.5,t:'translate(26 50) scale(1.05)',eyes:eyes})+
+      '<path d="M44 52 l6 -10 l6 10 Z" fill="#ff6fae" stroke="#7a4a6a" stroke-width="2"/><circle cx="50" cy="48" r="3" fill="#fff"/>'+
+      '<rect x="160" y="40" width="148" height="62" rx="24" fill="#fff" stroke="#e7b6d2" stroke-width="2"/><path d="M168 86 l-14 12 l22 -6 z" fill="#fff" stroke="#e7b6d2" stroke-width="2"/>'+
+      T(174,64,'Leave it to me~!','M PLUS Rounded 1c',14,'#7a4a6a','font-weight="800"')+T(174,86,'(◕‿◕✿)  $19 → $0','M PLUS Rounded 1c',12,'#b0709a','font-weight="700"')+
+      '<rect x="176" y="150" width="120" height="40" rx="20" fill="#ff8fc4" stroke="#7a4a6a" stroke-width="2"/>'+T(206,176,'Cancel it ♡','M PLUS Rounded 1c',13,'#fff','font-weight="800"')+'</svg>'}},
+
+   {id:'clay',name:'Soft 3D clay',like:'Claymation / toy',fit:'Premium',sw:['#ffb4a2','#ffd6a5','#a0c4ff','#fdffb6'],
+    p:'Squishy rounded 3D shapes with soft light and shadow. Feels tactile and premium.',
+    s:function(){return '<svg viewBox="0 0 320 230" role="img" aria-label="Soft 3D clay style"><defs>'+
+      '<radialGradient id="cl1" cx=".35" cy=".3" r=".8"><stop offset="0" stop-color="#ffd3e6"/><stop offset=".55" stop-color="#ff8fbf"/><stop offset="1" stop-color="#d9568f"/></radialGradient>'+
+      '<radialGradient id="cl2" cx=".35" cy=".3" r=".8"><stop offset="0" stop-color="#d9ccff"/><stop offset=".6" stop-color="#9a80ff"/><stop offset="1" stop-color="#6447d6"/></radialGradient>'+
+      '<linearGradient id="cl3" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#7ee6b8"/><stop offset="1" stop-color="#2fb382"/></linearGradient>'+
+      '<filter id="cls" x="-30%" y="-30%" width="160%" height="160%"><feDropShadow dx="0" dy="8" stdDeviation="7" flood-color="#8a5a4a" flood-opacity=".28"/></filter></defs>'+
+      '<rect width="320" height="230" fill="#fbe9df"/><ellipse cx="160" cy="214" rx="170" ry="30" fill="#f3d5c6"/>'+
+      '<g filter="url(#cls)"><circle cx="72" cy="88" r="28" fill="url(#cl1)"/><circle cx="112" cy="88" r="28" fill="url(#cl1)"/><circle cx="62" cy="116" r="26" fill="url(#cl1)"/><circle cx="122" cy="116" r="26" fill="url(#cl1)"/><ellipse cx="92" cy="114" rx="40" ry="38" fill="url(#cl1)"/></g>'+
+      '<circle cx="80" cy="116" r="6" fill="#2a1f2f"/><circle cx="104" cy="116" r="6" fill="#2a1f2f"/><circle cx="78" cy="113" r="2" fill="#fff"/><circle cx="102" cy="113" r="2" fill="#fff"/><path d="M84 132 q8 6 16 0" fill="none" stroke="#2a1f2f" stroke-width="3.5" stroke-linecap="round"/>'+
+      '<g filter="url(#cls)"><path d="M210 150 Q206 92 244 84 Q282 92 278 150 Q244 160 210 150 Z" fill="url(#cl2)"/></g><circle cx="232" cy="114" r="7" fill="#fff"/><circle cx="256" cy="114" r="7" fill="#fff"/><circle cx="233" cy="116" r="3.5" fill="#2a1f2f"/><circle cx="257" cy="116" r="3.5" fill="#2a1f2f"/>'+
+      '<g filter="url(#cls)"><rect x="96" y="172" width="128" height="40" rx="20" fill="url(#cl3)"/></g><rect x="104" y="176" width="112" height="12" rx="6" fill="#fff" opacity=".35"/>'+T(128,198,'Squish it','Fredoka',16,'#fff','font-weight="700"')+
+      T(198,72,'$19/mo','Fredoka',16,'#6447d6','font-weight="700"')+'</svg>'}},
+
+   {id:'comic',name:'Comic book',like:'Marvel / pop art',fit:'Bold',sw:['#ffe14d','#ff3b3b','#2b6cff','#ffffff'],
+    p:'Thick ink lines, halftone dots, panels and "KA-CHING!" bursts. Loud and energetic.',
+    s:function(){var dots='<defs><pattern id="ht" width="8" height="8" patternUnits="userSpaceOnUse"><circle cx="4" cy="4" r="2" fill="#ffb3c7"/></pattern><pattern id="ht2" width="8" height="8" patternUnits="userSpaceOnUse"><circle cx="4" cy="4" r="2.2" fill="#a9c4ff"/></pattern></defs>';
+      return '<svg viewBox="0 0 320 230" role="img" aria-label="Comic book style">'+dots+'<rect width="320" height="230" fill="#fff"/>'+
+      '<rect x="6" y="6" width="150" height="150" fill="url(#ht)" stroke="#000" stroke-width="4"/><rect x="164" y="6" width="150" height="150" fill="url(#ht2)" stroke="#000" stroke-width="4"/>'+
+      brain({stroke:'#000',sw:4.5,t:'translate(22 32) scale(.98)'})+gob({stroke:'#000',sw:4,t:'translate(206 60) scale(1.3)',main:'#7b5cff'})+
+      '<path d="M30 22 h100 a8 8 0 0 1 8 8 v26 a8 8 0 0 1 -8 8 h-60 l-14 14 l2 -14 h-28 a8 8 0 0 1 -8 -8 v-26 a8 8 0 0 1 8 -8z" fill="#fff" stroke="#000" stroke-width="3"/>'+T(34,46,'LEAVE IT','Bangers',16,'#000')+T(34,60,'TO ME!','Bangers',16,'#000')+
+      '<polygon points="160,150 178,174 210,162 200,190 232,204 198,210 204,228 176,214 156,228 152,208 120,212 138,192 112,176 146,176 140,152" fill="#ffe14d" stroke="#000" stroke-width="4"/>'+
+      T(124,200,'KA-CHING!','Bangers',26,'#ff3b3b','stroke="#000" stroke-width="1.5" paint-order="stroke"')+
+      '<rect x="176" y="18" width="126" height="26" fill="#ffe14d" stroke="#000" stroke-width="3"/>'+T(184,37,'MEANWHILE… $19!','Bangers',16,'#000')+'</svg>'}},
+
+   {id:'cozy',name:'Cozy village',like:'Animal Crossing-like',fit:'Calm',sw:['#a8d8a0','#f6e7c8','#8b6b4a','#ffb38a'],
+    p:'Soft greens, wooden signs and letters in the mailbox. Chores feel like tending a little village.',
+    s:function(){var leaves='';[[20,30],[60,200],[290,40],[300,190],[150,20]].forEach(function(p){leaves+='<ellipse cx="'+p[0]+'" cy="'+p[1]+'" rx="9" ry="5" fill="#8fc987" transform="rotate(-30 '+p[0]+' '+p[1]+')"/>'});
+      return '<svg viewBox="0 0 320 230" role="img" aria-label="Cozy village style"><rect width="320" height="230" fill="#d7efcf"/>'+leaves+
+      '<ellipse cx="96" cy="196" rx="70" ry="14" fill="#bfe3b4"/>'+brain({main:'#ffb7c9',dark:'#ef8fa9',stroke:'#6b4a3a',sw:3,t:'translate(36 76) scale(1.02)'})+
+      '<path d="M66 70 Q84 40 104 68 Q86 62 66 70 Z" fill="#7cc06a" stroke="#4f7d3f" stroke-width="2.5"/><path d="M86 66 L84 50" stroke="#4f7d3f" stroke-width="2.5"/>'+
+      '<rect x="170" y="36" width="138" height="112" rx="14" fill="#fbf3df" stroke="#8b6b4a" stroke-width="3"/><rect x="226" y="28" width="26" height="14" fill="#f3c9a0" opacity=".9" transform="rotate(-6 239 35)"/>'+
+      T(184,62,'A letter arrived!','Baloo 2',15,'#6b4a3a','font-weight="800"')+T(184,84,'"Lumen+ wants','Baloo 2',13,'#8b6b4a','font-weight="600"')+T(184,100,'19 coins again."','Baloo 2',13,'#8b6b4a','font-weight="600"')+
+      '<rect x="184" y="112" width="110" height="26" rx="13" fill="#8fc987" stroke="#4f7d3f" stroke-width="2.5"/>'+T(204,130,'Tidy it up','Baloo 2',13,'#2f4f25','font-weight="800"')+
+      '<rect x="192" y="168" width="96" height="34" rx="6" fill="#b88a5c" stroke="#6b4a3a" stroke-width="3"/><rect x="236" y="202" width="8" height="18" fill="#8b6b4a"/>'+T(206,190,'Savings: 412','Baloo 2',12,'#fff','font-weight="800"')+'</svg>'}},
+
+   {id:'doodle',name:'Notebook doodle',like:'Hand-drawn sketch',fit:'Personal',sw:['#fdfbf3','#2f5bd3','#e94f4f','#ffd84a'],
+    p:'Pen on lined paper: wobbly lines, ticked boxes and scribbled notes. Feels like your own to-do list.',
+    s:function(){return '<svg viewBox="0 0 320 230" role="img" aria-label="Notebook doodle style"><defs><pattern id="ln" width="320" height="22" patternUnits="userSpaceOnUse"><line x1="0" y1="21" x2="320" y2="21" stroke="#c9daf5" stroke-width="1.2"/></pattern></defs>'+
+      '<rect width="320" height="230" fill="#fdfbf3"/><rect width="320" height="230" fill="url(#ln)"/><line x1="36" y1="0" x2="36" y2="230" stroke="#f2a3a3" stroke-width="1.5"/>'+
+      '<g fill="none" stroke="#2f5bd3" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M70 96 C52 92 50 66 70 62 C70 44 94 40 102 54 C112 40 138 46 134 64 C152 68 150 94 132 98 C134 116 110 122 100 110 C90 124 66 118 70 96 Z"/><path d="M100 56 C96 70 106 78 100 92"/><circle cx="88" cy="84" r="3"/><circle cx="112" cy="84" r="3"/><path d="M92 98 q8 6 16 0"/></g>'+
+      '<path d="M66 62 l-6 -10 M134 62 l8 -10" stroke="#ffd84a" stroke-width="3" stroke-linecap="round"/>'+
+      T(168,48,'today:','Gochi Hand',20,'#2f5bd3')+
+      '<rect x="168" y="62" width="14" height="14" fill="none" stroke="#2f5bd3" stroke-width="2"/><path d="M170 68 l5 6 l9 -12" fill="none" stroke="#e94f4f" stroke-width="2.6" stroke-linecap="round"/>'+T(190,75,'cancel Lumen+','Gochi Hand',17,'#2f5bd3')+
+      '<line x1="190" y1="70" x2="290" y2="69" stroke="#e94f4f" stroke-width="2"/>'+
+      '<rect x="168" y="88" width="14" height="14" fill="none" stroke="#2f5bd3" stroke-width="2"/>'+T(190,101,'return headphones','Gochi Hand',17,'#2f5bd3')+
+      '<rect x="168" y="114" width="14" height="14" fill="none" stroke="#2f5bd3" stroke-width="2"/>'+T(190,127,'pay car thing','Gochi Hand',17,'#2f5bd3')+
+      '<path d="M60 164 C110 150 170 176 250 158" fill="none" stroke="#ffd84a" stroke-width="16" stroke-linecap="round" opacity=".7"/>'+T(66,170,'saved $228/yr  :)','Gochi Hand',22,'#e94f4f')+
+      T(212,210,'– Noodle','Gochi Hand',16,'#2f5bd3')+'</svg>'}},
+
+   {id:'neon',name:'Neon arcade',like:'Synthwave / cyber',fit:'Edgy',sw:['#0b0820','#ff3ea5','#3ef2ff','#ffe66d'],
+    p:'Dark screen, glowing outlines and a scoreboard. Your savings are the high score.',
+    s:function(){var grid='';for(var i=0;i<9;i++)grid+='<line x1="'+(160+(i-4)*12)+'" y1="150" x2="'+(160+(i-4)*90)+'" y2="230" stroke="#ff3ea5" stroke-width="1" opacity=".6"/>';for(var j=0;j<5;j++){var y=150+j*j*4+j*6;grid+='<line x1="0" y1="'+y+'" x2="320" y2="'+y+'" stroke="#ff3ea5" stroke-width="1" opacity=".5"/>'}
+      return '<svg viewBox="0 0 320 230" role="img" aria-label="Neon arcade style"><defs><filter id="gl" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="2.5" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter></defs>'+
+      '<rect width="320" height="230" fill="#0b0820"/><circle cx="160" cy="150" r="56" fill="#ff6a3d" opacity=".25"/>'+grid+
+      '<g filter="url(#gl)">'+brain({main:'none',dark:'#3ef2ff',stroke:'#3ef2ff',sw:2.5,t:'translate(30 40) scale(.95)',eyes:'<circle cx="48" cy="74" r="5" fill="#3ef2ff"/><circle cx="72" cy="74" r="5" fill="#3ef2ff"/>'})+
+      gob({main:'none',stroke:'#ff3ea5',sw:2.5,t:'translate(214 56) scale(1.4)'})+'</g>'+
+      T(18,28,'HI-SCORE','Orbitron',10,'#ffe66d','font-weight="900" letter-spacing="2"')+T(18,48,'$000412','Orbitron',20,'#ffe66d','font-weight="900" filter="url(#gl)"')+
+      T(186,36,'BOSS: GOBBLER','Orbitron',10,'#ff3ea5','font-weight="900" letter-spacing="1"')+
+      '<rect x="98" y="182" width="124" height="32" rx="6" fill="none" stroke="#3ef2ff" stroke-width="2" filter="url(#gl)"/>'+T(118,203,'PRESS START','Orbitron',12,'#3ef2ff','font-weight="900" letter-spacing="1"')+'</svg>'}},
+
+   {id:'bricks',name:'Toy bricks',like:'LEGO-like',fit:'Playful',sw:['#e3000b','#ffd500','#006cb7','#00a650'],
+    p:'Everything snaps together from studded bricks. Teaching a skill = adding bricks to the build.',
+    s:function(){function brick(x,y,w,c,d){var st='';for(var i=0;i<w;i++)st+='<rect x="'+(x+6+i*20)+'" y="'+(y-5)+'" width="10" height="6" rx="2" fill="'+c+'" stroke="'+d+'" stroke-width="1.5"/>';return st+'<rect x="'+x+'" y="'+y+'" width="'+(w*20)+'" height="20" rx="3" fill="'+c+'" stroke="'+d+'" stroke-width="2"/>'}
+      var base='';for(var x=0;x<16;x++)base+='<rect x="'+(4+x*20)+'" y="196" width="12" height="5" rx="2" fill="#00a650" stroke="#00752f" stroke-width="1.2"/>';
+      return '<svg viewBox="0 0 320 230" role="img" aria-label="Toy bricks style"><rect width="320" height="230" fill="#e9f3ff"/><rect y="200" width="320" height="30" fill="#00a650"/>'+base+
+      brick(40,176,6,'#ff7ab0','#c2457c')+brick(30,152,7,'#ff7ab0','#c2457c')+brick(30,128,7,'#ff8fc0','#c2457c')+brick(40,104,6,'#ff8fc0','#c2457c')+brick(60,80,4,'#ff8fc0','#c2457c')+
+      '<rect x="66" y="132" width="16" height="16" rx="3" fill="#fff" stroke="#1c1a24" stroke-width="2"/><rect x="110" y="132" width="16" height="16" rx="3" fill="#fff" stroke="#1c1a24" stroke-width="2"/><rect x="71" y="137" width="7" height="8" fill="#1c1a24"/><rect x="115" y="137" width="7" height="8" fill="#1c1a24"/>'+
+      '<path d="M84 162 q12 8 24 0" fill="none" stroke="#1c1a24" stroke-width="3" stroke-linecap="round"/>'+
+      brick(214,164,4,'#7b5cff','#4e35b8')+brick(214,140,4,'#7b5cff','#4e35b8')+brick(224,116,3,'#7b5cff','#4e35b8')+'<rect x="232" y="146" width="12" height="10" fill="#fff"/><rect x="258" y="146" width="12" height="10" fill="#fff"/>'+
+      '<rect x="170" y="20" width="136" height="44" rx="6" fill="#ffd500" stroke="#b39500" stroke-width="2.5"/>'+T(182,48,'Build: cancel $19','Lilita One',16,'#1c1a24')+'</svg>'}},
+
+   {id:'flat',name:'Flat geometric',like:'Kurzgesagt / Headspace',fit:'Clean',sw:['#1e2a5a','#ff7a59','#ffd166','#4ecdc4'],
+    p:'Bold flat shapes, long shadows and a warm sunset palette. Friendly but still looks like a real app.',
+    s:function(){return '<svg viewBox="0 0 320 230" role="img" aria-label="Flat geometric style"><rect width="320" height="230" fill="#1e2a5a"/><circle cx="250" cy="70" r="46" fill="#ffd166"/>'+
+      '<path d="M0 170 Q80 130 160 160 T320 150 V230 H0Z" fill="#2b3a78"/><path d="M0 196 Q90 170 190 192 T320 186 V230 H0Z" fill="#35468f"/>'+
+      '<polygon points="60,120 150,120 230,230 140,230" fill="#16204a" opacity=".55"/>'+
+      '<g><circle cx="80" cy="96" r="26" fill="#ff7a59"/><circle cx="120" cy="96" r="26" fill="#ff7a59"/><circle cx="72" cy="124" r="24" fill="#ff7a59"/><circle cx="128" cy="124" r="24" fill="#ff7a59"/><ellipse cx="100" cy="120" rx="38" ry="34" fill="#ff7a59"/><path d="M100 70 C96 90 106 100 100 118" stroke="#d95a3c" stroke-width="5" fill="none" stroke-linecap="round"/></g>'+
+      '<circle cx="88" cy="122" r="5" fill="#1e2a5a"/><circle cx="112" cy="122" r="5" fill="#1e2a5a"/><rect x="92" y="134" width="16" height="4" rx="2" fill="#1e2a5a"/>'+
+      '<rect x="176" y="132" width="122" height="58" rx="12" fill="#fff"/>'+T(190,156,'Lumen+ · $19/mo','Outfit',13,'#1e2a5a','font-weight="800"')+'<rect x="190" y="166" width="70" height="14" rx="7" fill="#4ecdc4"/>'+T(198,177,'Cancel','Outfit',11,'#1e2a5a','font-weight="800"')+'</svg>'}},
+
+   {id:'paper',name:'Paper cut-out',like:'Storybook craft',fit:'Warm',sw:['#e8d5b7','#f28482','#84a59d','#f6bd60'],
+    p:'Layered paper shapes with soft shadows, like a handmade picture book. Warm and gentle.',
+    s:function(){return '<svg viewBox="0 0 320 230" role="img" aria-label="Paper cut-out style"><defs><filter id="pc" x="-20%" y="-20%" width="140%" height="140%"><feDropShadow dx="2" dy="4" stdDeviation="2.5" flood-color="#6b4f2a" flood-opacity=".35"/></filter></defs>'+
+      '<rect width="320" height="230" fill="#e8d5b7"/>'+
+      '<path d="M0 150 Q60 110 130 140 T260 120 T320 130 V230 H0Z" fill="#84a59d" filter="url(#pc)"/><path d="M0 184 Q80 160 170 182 T320 172 V230 H0Z" fill="#6a8f86" filter="url(#pc)"/>'+
+      '<circle cx="262" cy="52" r="28" fill="#f6bd60" filter="url(#pc)"/>'+
+      '<g filter="url(#pc)"><circle cx="78" cy="84" r="24" fill="#f28482"/><circle cx="114" cy="84" r="24" fill="#f28482"/><circle cx="70" cy="110" r="22" fill="#f28482"/><circle cx="122" cy="110" r="22" fill="#f28482"/><ellipse cx="96" cy="108" rx="34" ry="30" fill="#f28482"/></g>'+
+      '<path d="M96 64 C92 80 102 90 96 104" stroke="#d6605e" stroke-width="3" fill="none"/><circle cx="86" cy="110" r="4" fill="#3d2c1e"/><circle cx="106" cy="110" r="4" fill="#3d2c1e"/><path d="M90 122 q6 5 12 0" stroke="#3d2c1e" stroke-width="2.5" fill="none" stroke-linecap="round"/>'+
+      '<g filter="url(#pc)"><rect x="168" y="96" width="132" height="70" rx="4" fill="#fdf6ea" transform="rotate(-3 234 131)"/></g>'+
+      T(180,124,'Once upon a bill…','Fraunces',15,'#3d2c1e','font-weight="700" transform="rotate(-3 234 131)"')+T(180,146,'$19 every month','Fraunces',12,'#7a5a3a','transform="rotate(-3 234 131)"')+'</svg>'}}
+  ];
+
+  var sel='creature';
+  function render(){
+    document.getElementById('grid').innerHTML=STYLES.map(function(s){
+      return '<div class="card'+(s.id===sel?' sel':'')+'" role="button" tabindex="0" data-id="'+s.id+'" aria-pressed="'+(s.id===sel)+'">'+
+        '<div class="stage">'+s.s()+'</div>'+
+        '<div class="info"><span class="like">Feels like: '+s.like+'</span><h3>'+s.name+'</h3><p>'+s.p+'</p>'+
+        '<div class="meta"><div class="sw" aria-label="Palette">'+s.sw.map(function(c){return '<i style="background:'+c+'"></i>'}).join('')+'</div><span class="fit">Vibe: '+s.fit+'</span></div></div></div>';
+    }).join('');
+    var cur=STYLES.filter(function(s){return s.id===sel})[0];
+    document.getElementById('pick').textContent='Build it in '+cur.name+' style';
+  }
+  function choose(id){sel=id;render();var n=document.querySelector('[data-id="'+id+'"]');if(n)n.focus({preventScroll:true})}
+  var g=document.getElementById('grid');
+  g.addEventListener('click',function(e){var c=e.target.closest('[data-id]');if(c)choose(c.getAttribute('data-id'))});
+  g.addEventListener('keydown',function(e){if((e.key==='Enter'||e.key===' ')&&e.target.matches('[data-id]')){e.preventDefault();choose(e.target.getAttribute('data-id'))}});
+  document.getElementById('copy').addEventListener('click',function(){var b=this,t=document.getElementById('pick').textContent;
+    try{navigator.clipboard.writeText(t).then(function(){b.textContent='Copied'},function(){b.textContent='Select it'})}catch(err){b.textContent='Select it'}
+    setTimeout(function(){b.textContent='Copy'},1800)});
+  render();
+})();
+</script>

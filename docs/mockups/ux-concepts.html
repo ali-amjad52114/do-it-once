@@ -1,0 +1,224 @@
+<title>UX Concept Board</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,700;12..96,800&family=Nunito+Sans:opsz,wght@6..12,600;6..12,800&family=Press+Start+2P&family=Gochi+Hand&display=swap">
+<style>
+/* Layout: concept board — each card = one interaction model (stage sketch + core loop / approval moment / strength / risk). Sticky pick bar. One committed light look. */
+:root{
+  --bg:#f3f1ec; --panel:#ffffff; --panel-2:#f1eee8; --ink:#1c1a24; --ink-soft:#57536a; --ink-faint:#8d8898; --edge:#1c1a24;
+  --grape:#6b4ef6; --pink:#ff7ab6; --mint:#1fb48b; --sun:#ffc83d; --coral:#ff6b5a; --sky:#4f9dff;
+  --display:'Bricolage Grotesque','Avenir Next','Segoe UI',system-ui,sans-serif; --body:'Nunito Sans','Avenir Next','Segoe UI',system-ui,sans-serif;
+  color-scheme:light;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--body);font-weight:600;font-size:15px;line-height:1.45;padding-inline:16px;padding-block:20px 110px}
+h1,h2,h3{font-family:var(--display);font-weight:800;margin:0;letter-spacing:-.01em;text-wrap:balance}
+.wrap{max-width:1300px;margin:0 auto;display:flex;flex-direction:column;gap:18px}
+.intro{display:flex;justify-content:space-between;align-items:flex-end;gap:16px;flex-wrap:wrap}
+.intro h1{font-size:clamp(28px,4vw,40px)}
+.intro p{margin:6px 0 0;color:var(--ink-soft);max-width:68ch}
+.mock{font-size:12px;color:var(--ink-faint);border:1.5px dashed var(--ink-faint);border-radius:999px;padding:3px 12px}
+.filters{display:flex;gap:8px;flex-wrap:wrap}
+.filters button{font:inherit;font-size:13px;font-weight:800;border:2px solid var(--edge);border-radius:999px;padding:4px 12px;background:var(--panel);cursor:pointer}
+.filters button[aria-pressed="true"]{background:var(--ink);color:#fff}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(310px,1fr));gap:18px}
+.card{background:var(--panel);border:2px solid var(--edge);border-radius:20px;box-shadow:3px 3px 0 var(--edge);overflow:hidden;display:flex;flex-direction:column;cursor:pointer;transition:transform .1s,box-shadow .1s}
+.card:hover{transform:translate(-2px,-2px);box-shadow:5px 5px 0 var(--edge)}
+.card:focus-visible{outline:3px solid var(--grape);outline-offset:3px}
+.card.sel{box-shadow:5px 5px 0 var(--edge),0 0 0 4px var(--grape)}
+.stage{border-bottom:2px solid var(--edge);line-height:0}
+.stage svg{width:100%;height:auto;display:block}
+.info{padding:12px 14px 14px;display:flex;flex-direction:column;gap:8px}
+.top{display:flex;justify-content:space-between;gap:8px;align-items:baseline}
+.info h3{font-size:19px}
+.tag{font-size:11px;font-weight:800;border:1.5px solid var(--edge);border-radius:999px;padding:1px 8px;white-space:nowrap}
+.pitch{margin:0;font-size:13.5px;color:var(--ink)}
+dl{margin:0;display:grid;grid-template-columns:auto minmax(0,1fr);gap:4px 10px;font-size:12.5px}
+dt{font-weight:800;color:var(--ink-faint);text-transform:uppercase;letter-spacing:.06em;font-size:10.5px;padding-top:2px}
+dd{margin:0;color:var(--ink-soft)}
+.pickbar{position:fixed;left:50%;bottom:calc(16px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);background:var(--ink);color:#fff;border-radius:18px;padding:10px 12px 10px 16px;display:flex;align-items:center;gap:12px;flex-wrap:wrap;box-shadow:3px 3px 0 var(--grape);max-width:calc(100% - 32px);z-index:3}
+.pickbar code{background:#2d2a3a;border-radius:8px;padding:4px 8px;font-size:13px;color:#e9e4ff;user-select:all}
+.pickbar button{font:inherit;font-size:13px;border:1.5px solid #fff;background:transparent;color:#fff;border-radius:10px;padding:4px 10px;cursor:pointer}
+@media (prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+
+<div class="wrap">
+  <div class="intro">
+    <div>
+      <h1>Twelve ways the app could work</h1>
+      <p>Each card is a different interaction model, not a different skin: a different home screen, a different everyday loop, and a different moment where you approve the irreversible step.</p>
+    </div>
+    <span class="mock">Mockup · concept sketches</span>
+  </div>
+  <div class="filters" role="group" aria-label="Filter by feel">
+    <button type="button" data-f="all" aria-pressed="true">All</button>
+    <button type="button" data-f="Game">Game</button>
+    <button type="button" data-f="Calm">Calm</button>
+    <button type="button" data-f="Fast">Fast</button>
+    <button type="button" data-f="Social">Story</button>
+  </div>
+  <div class="grid" id="grid"></div>
+</div>
+
+<div class="pickbar" role="status" aria-live="polite"><span>Your pick:</span><code id="pick">Build the Pocket pet concept</code><button id="copy" type="button">Copy</button></div>
+
+<script>
+(function(){
+  var K='#1c1a24';
+  function T(x,y,t,sz,fill,extra,font){return '<text x="'+x+'" y="'+y+'" font-family="'+(font||"Nunito Sans,sans-serif")+'" font-size="'+sz+'" fill="'+(fill||K)+'" font-weight="800" '+(extra||'')+'>'+t+'</text>'}
+  function buddy(x,y,s,c){c=c||'#ff8fc0';return '<g transform="translate('+x+' '+y+') scale('+s+')"><g fill="'+c+'" stroke="'+K+'" stroke-width="4"><circle cx="42" cy="50" r="24"/><circle cx="78" cy="50" r="24"/><circle cx="32" cy="74" r="22"/><circle cx="88" cy="74" r="22"/></g><ellipse cx="60" cy="70" rx="35" ry="32" fill="'+c+'"/><circle cx="48" cy="72" r="6" fill="'+K+'"/><circle cx="72" cy="72" r="6" fill="'+K+'"/><path d="M52 86 q8 7 16 0" fill="none" stroke="'+K+'" stroke-width="4" stroke-linecap="round"/></g>'}
+  function gob(x,y,s){return '<g transform="translate('+x+' '+y+') scale('+s+')"><path d="M8 48 Q5 16 28 10 Q51 16 48 48 L41 43 L35 49 L28 43 L21 49 L15 43 Z" fill="#9b85ff" stroke="'+K+'" stroke-width="3.5" stroke-linejoin="round"/><circle cx="21" cy="27" r="5" fill="#fff"/><circle cx="36" cy="27" r="5" fill="#fff"/><circle cx="22" cy="28" r="2.5" fill="'+K+'"/><circle cx="36" cy="28" r="2.5" fill="'+K+'"/></g>'}
+  function R(x,y,w,h,f,r,extra){return '<rect x="'+x+'" y="'+y+'" width="'+w+'" height="'+h+'" rx="'+(r==null?8:r)+'" fill="'+f+'" stroke="'+K+'" stroke-width="2" '+(extra||'')+'/>'}
+
+  var C=[
+   {id:'pet',name:'Pocket pet',f:'Game',tag:'Tamagotchi-like',
+    pitch:'The whole app is a little creature on a handheld screen. Unhandled bills make it hungry and grumpy; handled chores feed it.',
+    loop:'Check in once a day, see its mood, feed it the chores it found.',ok:'Press A to feed, then hold A for one second on the final step.',str:'Daily habit and emotional pull.',risk:'Can feel guilt-trippy if the pet is sad.',
+    s:function(){return '<svg viewBox="0 0 320 230" role="img" aria-label="Handheld pet device sketch"><rect width="320" height="230" fill="#ffe9f2"/>'+
+      '<path d="M160 14 C230 14 262 70 262 128 C262 190 220 220 160 220 C100 220 58 190 58 128 C58 70 90 14 160 14Z" fill="#ff8fc0" stroke="'+K+'" stroke-width="3"/>'+
+      '<rect x="102" y="56" width="116" height="92" rx="10" fill="#c9e6b8" stroke="'+K+'" stroke-width="3"/>'+buddy(132,74,.48,'#3a5a2a')+
+      T(108,72,'HUNGRY','8','#3a5a2a','',"Press Start 2P,monospace")+'<g fill="#3a5a2a">'+[0,1,2,3].map(function(i){return '<rect x="'+(160+i*12)+'" y="134" width="9" height="7" '+(i>1?'opacity=".25"':'')+'/>'}).join('')+'</g>'+T(108,141,'BILLS 2','7','#3a5a2a','',"Press Start 2P,monospace")+
+      '<circle cx="124" cy="182" r="13" fill="#ffc83d" stroke="'+K+'" stroke-width="2.5"/><circle cx="160" cy="190" r="13" fill="#ffc83d" stroke="'+K+'" stroke-width="2.5"/><circle cx="196" cy="182" r="13" fill="#ffc83d" stroke="'+K+'" stroke-width="2.5"/>'+
+      T(119,186,'A',11)+T(155,194,'B',11)+T(191,186,'C',11)+'</svg>'}},
+
+   {id:'deck',name:'Card battler',f:'Game',tag:'Slay the Spire-like',
+    pitch:'Each bill is an enemy. Your skills are cards in your hand: play Recall, then Skip Offer, then the Cancel finisher.',
+    loop:'Draw the cards that fit this chore, play them in order, watch the enemy drop.',ok:'The finisher card asks "Play it for real?" before it lands.',str:'Makes skills feel collectible and powerful.',risk:'Adds a step for people who just want it done.',
+    s:function(){var cards=[['Recall','#e2efff',-14,70],['No offer','#fff3cf',-5,118],['Cancel!','#ffe5e1',5,166],['Remind','#dcf7ee',14,214]];
+      return '<svg viewBox="0 0 320 230" role="img" aria-label="Card battler sketch"><rect width="320" height="230" fill="#2b2547"/><ellipse cx="160" cy="92" rx="70" ry="12" fill="#1c1833"/>'+gob(126,22,1.3)+
+      '<rect x="120" y="10" width="80" height="8" rx="4" fill="#1c1833"/><rect x="120" y="10" width="52" height="8" rx="4" fill="#ff6b5a"/>'+T(214,18,'$19/mo',11,'#fff')+
+      cards.map(function(c){return '<g transform="rotate('+c[2]+' '+(c[3]+22)+' 260)"><rect x="'+c[3]+'" y="118" width="48" height="70" rx="8" fill="'+c[1]+'" stroke="'+K+'" stroke-width="2.5"/>'+T(c[3]+6,138,c[0],8.5)+'<circle cx="'+(c[3]+10)+'" cy="178" r="6" fill="#6b4ef6"/>'+T(c[3]+7,181,'1',8,'#fff')+'</g>'}).join('')+
+      '<circle cx="30" cy="196" r="16" fill="#ffc83d" stroke="'+K+'" stroke-width="2.5"/>'+T(24,201,'3',14)+T(10,222,'energy',9,'#fff')+'</svg>'}},
+
+   {id:'swipe',name:'Swipe to decide',f:'Fast',tag:'Tinder-like',
+    pitch:'Once a week you get a stack of cards: every subscription, renewal and return window. Swipe right to handle it, left to keep it.',
+    loop:'Two minutes of swiping, then the agent works through the right-swipes.',ok:'A right swipe is the approval; the card says exactly what will happen.',str:'Fastest to use; great for "what am I paying for".',risk:'Fewer game hooks; mostly a utility.',
+    s:function(){return '<svg viewBox="0 0 320 230" role="img" aria-label="Swipe stack sketch"><rect width="320" height="230" fill="#eef4ff"/>'+
+      R(96,8,128,214,'#fff',22)+R(110,40,100,130,'#f1eee8',14,'transform="rotate(-6 160 105)"')+R(110,36,100,130,'#fff',14,'transform="rotate(5 160 101)"')+
+      '<g transform="rotate(-10 160 100)">'+R(108,30,104,136,'#fff',14)+'<rect x="108" y="30" width="104" height="54" rx="14" fill="#9b85ff"/>'+gob(140,36,.8)+T(116,102,'Lumen+',13)+T(116,118,'$19 / month',11,'#57536a')+T(116,134,'used 2× this month',9,'#8d8898')+'</g>'+
+      '<circle cx="128" cy="194" r="15" fill="#ffe5e1" stroke="'+K+'" stroke-width="2"/>'+T(122,199,'✕',13,'#ff6b5a')+'<circle cx="192" cy="194" r="15" fill="#dcf7ee" stroke="'+K+'" stroke-width="2"/>'+T(185,199,'✓',13,'#1fb48b')+
+      T(22,110,'← keep',12,'#ff6b5a')+T(244,110,'handle →',12,'#1fb48b')+'</svg>'}},
+
+   {id:'factory',name:'Savings factory',f:'Game',tag:'Idle tycoon',
+    pitch:'Your skills are machines on a conveyor belt. Bills come in from the mailbox, get processed, and coins pile up as yearly savings.',
+    loop:'Watch the counter tick; teach a new skill to add a machine.',ok:'The belt stops at a red gate for any irreversible step; you pull the lever.',str:'Shows value growing on its own; satisfying.',risk:'Abstract; the real chores are hidden.',
+    s:function(){var belt='';for(var i=0;i<14;i++)belt+='<line x1="'+(20+i*20)+'" y1="150" x2="'+(28+i*20)+'" y2="162" stroke="#57536a" stroke-width="2"/>';
+      return '<svg viewBox="0 0 320 230" role="img" aria-label="Savings factory sketch"><rect width="320" height="230" fill="#fff6e5"/>'+
+      '<rect x="10" y="148" width="300" height="16" rx="8" fill="#d8d2c4" stroke="'+K+'" stroke-width="2"/>'+belt+
+      R(14,96,46,52,'#4f9dff',6)+T(18,90,'mailbox',10)+'<rect x="22" y="110" width="30" height="6" fill="'+K+'"/>'+
+      R(90,84,56,64,'#9b85ff',8)+T(94,78,'Cancel',10)+'<circle cx="118" cy="108" r="10" fill="#fff" stroke="'+K+'" stroke-width="2"/><path d="M118 100 v8 l6 4" stroke="'+K+'" stroke-width="2" fill="none"/>'+
+      R(176,84,56,64,'#1fb48b',8)+T(180,78,'Return',10)+'<circle cx="204" cy="108" r="10" fill="#fff" stroke="'+K+'" stroke-width="2"/>'+
+      '<rect x="156" y="120" width="10" height="28" fill="#ff6b5a" stroke="'+K+'" stroke-width="2"/><circle cx="161" cy="118" r="6" fill="#ff6b5a" stroke="'+K+'" stroke-width="2"/>'+
+      '<path d="M262 148 L250 124 Q270 104 296 124 L286 148Z" fill="#ffc83d" stroke="'+K+'" stroke-width="2"/>'+[0,1,2].map(function(i){return '<ellipse cx="'+(262+i*10)+'" cy="'+(118-i*4)+'" rx="8" ry="4" fill="#ffd25e" stroke="'+K+'" stroke-width="1.5"/>'}).join('')+
+      R(176,14,132,44,'#1c1a24',10)+T(186,32,'$ saved / year',10,'#ffc83d')+T(186,52,'$ 4 1 2 . 0 0',16,'#fff','',"Press Start 2P,monospace")+
+      '<rect x="66" y="140" width="14" height="10" rx="2" fill="#fff" stroke="'+K+'" stroke-width="1.5"/><rect x="150" y="140" width="14" height="10" rx="2" fill="#fff" stroke="'+K+'" stroke-width="1.5"/>'+T(16,200,'2 bills on the belt · 1 waiting at the red gate',11,'#57536a')+'</svg>'}},
+
+   {id:'garden',name:'Life garden',f:'Calm',tag:'Forest / Finch-like',
+    pitch:'Every skill is a plant that grows a little each time it runs. Bills show up as weeds; pulling a weed is handling the chore.',
+    loop:'Visit the garden, pull weeds, watch plants bloom over months.',ok:'Pulling a weed opens a small "pull it for real?" card.',str:'Gentle and long-term; nice for wellbeing.',risk:'Slower pace; less urgent feel for deadlines.',
+    s:function(){var plant=function(x,h,c){return '<path d="M'+x+' 170 V'+(170-h)+'" stroke="#3f7d3a" stroke-width="4"/><ellipse cx="'+(x-9)+'" cy="'+(178-h*.6)+'" rx="10" ry="5" fill="#7cc06a" stroke="'+K+'" stroke-width="1.5"/><ellipse cx="'+(x+9)+'" cy="'+(172-h*.8)+'" rx="10" ry="5" fill="#7cc06a" stroke="'+K+'" stroke-width="1.5"/>'+(c?'<circle cx="'+x+'" cy="'+(166-h)+'" r="9" fill="'+c+'" stroke="'+K+'" stroke-width="2"/>':'')};
+      var weed=function(x){return '<path d="M'+x+' 170 l-6 -18 M'+x+' 170 l2 -22 M'+x+' 170 l8 -16" stroke="#8a7a3a" stroke-width="3" stroke-linecap="round"/><circle cx="'+(x+2)+'" cy="145" r="4" fill="#9b85ff" stroke="'+K+'" stroke-width="1.5"/>'};
+      return '<svg viewBox="0 0 320 230" role="img" aria-label="Life garden sketch"><rect width="320" height="230" fill="#e8f6ff"/><circle cx="270" cy="40" r="22" fill="#ffd25e"/>'+
+      '<rect x="0" y="168" width="320" height="62" fill="#b88a5c"/><rect x="0" y="164" width="320" height="8" fill="#7cc06a"/>'+
+      plant(40,70,'#ff7ab6')+plant(92,52,'#ffc83d')+plant(146,34,null)+weed(196)+plant(236,16,null)+weed(286)+
+      T(18,200,'Cancel · in bloom',10,'#fff')+T(122,200,'Statement · sprout',10,'#fff')+T(176,222,'weeds = bills due',10,'#fff')+
+      '<path d="M210 90 l24 -10 l10 10 l-22 12z" fill="#4f9dff" stroke="'+K+'" stroke-width="2"/>'+T(206,76,'water',10,'#4f9dff')+'</svg>'}},
+
+   {id:'room',name:'Cozy room',f:'Calm',tag:'Room / dollhouse',
+    pitch:'Home is an isometric room. The mailbox holds new triggers, the filing cabinet holds receipts, the wall calendar holds deadlines, and your buddy lives there.',
+    loop:'Tap objects in the room; the room fills with furniture as you teach skills.',ok:'Your buddy walks to the door and asks before leaving to do the final step.',str:'Very intuitive: every feature has a physical place.',risk:'More art to build; can get cluttered.',
+    s:function(){return '<svg viewBox="0 0 320 230" role="img" aria-label="Isometric room sketch"><rect width="320" height="230" fill="#f6efe6"/>'+
+      '<path d="M160 40 L290 105 L160 170 L30 105Z" fill="#e8d5b7" stroke="'+K+'" stroke-width="2"/><path d="M30 105 L30 40 L160 -25 L160 40Z" fill="#f3e3c7" stroke="'+K+'" stroke-width="2"/><path d="M160 40 L160 -25 L290 40 L290 105Z" fill="#ead6b3" stroke="'+K+'" stroke-width="2"/>'+
+      '<path d="M200 30 l40 20 v34 l-40 -20z" fill="#fff" stroke="'+K+'" stroke-width="2"/>'+T(206,52,'NOV',9)+'<circle cx="222" cy="62" r="4" fill="#ff6b5a"/>'+
+      '<path d="M60 80 l26 13 v30 l-26 -13z" fill="#4f9dff" stroke="'+K+'" stroke-width="2"/><path d="M60 80 l14 -7 l26 13 l-14 7z" fill="#7fb7ff" stroke="'+K+'" stroke-width="2"/>'+T(56,140,'mailbox · 2',9)+
+      '<path d="M226 104 l30 -15 v34 l-30 15z" fill="#9b85ff" stroke="'+K+'" stroke-width="2"/><path d="M196 89 l30 15 v34 l-30 -15z" fill="#b6a2ff" stroke="'+K+'" stroke-width="2"/><path d="M196 89 l30 -15 l30 15 l-30 15z" fill="#d2c6ff" stroke="'+K+'" stroke-width="2"/>'+T(206,160,'files',9)+
+      buddy(126,92,.42)+'<ellipse cx="151" cy="138" rx="18" ry="4" fill="#000" opacity=".12"/>'+
+      '<path d="M40 190 h240" stroke="#d8c9b0" stroke-width="2"/>'+T(66,214,'tap the mailbox → new chores',11,'#57536a')+'</svg>'}},
+
+   {id:'board',name:'Year board game',f:'Game',tag:'Board game',
+    pitch:'The year is a board. Each month you move a space; renewals, return windows and registrations are spaces on the track you can see coming.',
+    loop:'Look ahead on the board, clear spaces before you land on them.',ok:'Landing on a red space stops the token until you approve.',str:'Makes the future visible: no surprise renewals.',risk:'Calendar-heavy; less fun with few chores.',
+    s:function(){var sp=[[30,190],[70,190],[110,190],[150,190],[190,190],[230,190],[270,190],[270,150],[270,110],[270,70],[230,70],[190,70],[150,70],[110,70],[70,70],[30,70],[30,110],[30,150]],cols={2:'#ff6b5a',6:'#ffc83d',10:'#ff6b5a',13:'#1fb48b'};
+      return '<svg viewBox="0 0 320 230" role="img" aria-label="Board game sketch"><rect width="320" height="230" fill="#e9f7ef"/>'+
+      sp.map(function(p,i){return '<rect x="'+(p[0]-16)+'" y="'+(p[1]-16)+'" width="32" height="32" rx="6" fill="'+(cols[i]||'#fff')+'" stroke="'+K+'" stroke-width="2"/>'}).join('')+
+      T(18,174,'OCT',9)+T(100,174,'NOV',9)+T(222,174,'DEC',9)+
+      '<circle cx="70" cy="190" r="9" fill="#6b4ef6" stroke="'+K+'" stroke-width="2"/>'+
+      '<rect x="78" y="96" width="164" height="60" rx="12" fill="#fff" stroke="'+K+'" stroke-width="2"/>'+T(90,118,'Next red space: Nov 4',12)+T(90,136,'Lumen+ renews · $19',11,'#57536a')+
+      '<rect x="200" y="122" width="28" height="28" rx="6" fill="#fff" stroke="'+K+'" stroke-width="2" transform="rotate(12 214 136)"/><circle cx="208" cy="130" r="2.5" fill="'+K+'"/><circle cx="220" cy="142" r="2.5" fill="'+K+'"/><circle cx="214" cy="136" r="2.5" fill="'+K+'"/></svg>'}},
+
+   {id:'stars',name:'Skill constellations',f:'Calm',tag:'Skill tree / star map',
+    pitch:'Your knowledge is a night sky. Each life area is a constellation; each learned skill lights a star, and mastering a skill makes it brighter.',
+    loop:'See which stars are dim, teach or practise to light them.',ok:'A shooting star crosses the sky with an Approve button when a run needs you.',str:'Beautiful "your brain" visual; shows growth.',risk:'Pretty but less actionable day to day.',
+    s:function(){var st=[[60,60,1],[100,40,1],[130,80,1],[90,110,.4],[200,50,1],[240,80,.4],[220,130,.4],[170,150,.15],[270,160,.15],[60,170,.15]],ln=[[0,1],[1,2],[2,3],[4,5],[5,6]];
+      var bg='';for(var i=0;i<40;i++)bg+='<circle cx="'+((i*73)%320)+'" cy="'+((i*41)%230)+'" r="1" fill="#fff" opacity=".4"/>';
+      return '<svg viewBox="0 0 320 230" role="img" aria-label="Star map sketch"><rect width="320" height="230" fill="#141233"/>'+bg+
+      ln.map(function(l){return '<line x1="'+st[l[0]][0]+'" y1="'+st[l[0]][1]+'" x2="'+st[l[1]][0]+'" y2="'+st[l[1]][1]+'" stroke="#8f86d9" stroke-width="1.5" opacity=".7"/>'}).join('')+
+      st.map(function(s){return '<circle cx="'+s[0]+'" cy="'+s[1]+'" r="'+(4+s[2]*5)+'" fill="#ffd25e" opacity="'+(s[2]<.3?.35:1)+'"/>'+(s[2]===1?'<circle cx="'+s[0]+'" cy="'+s[1]+'" r="14" fill="#ffd25e" opacity=".15"/>':'')}).join('')+
+      T(58,138,'Subscriptions',10,'#cfc9ff')+T(196,26,'Purchases',10,'#cfc9ff')+T(150,176,'Travel · dark',10,'#6d67a8')+
+      '<path d="M210 196 L300 180" stroke="#fff" stroke-width="2" opacity=".7"/><rect x="214" y="194" width="88" height="26" rx="13" fill="#ffc83d" stroke="'+K+'" stroke-width="2"/>'+T(226,211,'Approve',11)+'</svg>'}},
+
+   {id:'chat',name:'Buddy chat',f:'Fast',tag:'Messenger-first',
+    pitch:'No dashboard. You and your buddy just text. It sends what it noticed, you reply with a tap, and it posts stickers and proof as it works.',
+    loop:'Read a message, tap a reply chip, get a sticker when it is done.',ok:'An inline card in the thread with Approve / Not now.',str:'Familiar and low effort; works on phone and watch.',risk:'Harder to see your whole collection at once.',
+    s:function(){return '<svg viewBox="0 0 320 230" role="img" aria-label="Chat thread sketch"><rect width="320" height="230" fill="#f4f1ff"/>'+
+      buddy(10,10,.26)+'<rect x="48" y="12" width="176" height="40" rx="14" fill="#fff" stroke="'+K+'" stroke-width="2"/>'+T(58,30,'Lumen+ renews Nov 4 ($19).',10)+T(58,44,'Cancel like last time?',10)+
+      '<rect x="176" y="62" width="118" height="26" rx="13" fill="#6b4ef6"/>'+T(188,79,'Yes, same as before',10,'#fff')+
+      '<rect x="48" y="98" width="200" height="66" rx="14" fill="#fff" stroke="'+K+'" stroke-width="2"/>'+T(58,116,'Last step cancels it for good.',10)+
+      '<rect x="58" y="126" width="74" height="26" rx="10" fill="#ff6b5a" stroke="'+K+'" stroke-width="2"/>'+T(70,143,'Approve',10,'#fff')+'<rect x="140" y="126" width="74" height="26" rx="10" fill="#fff" stroke="'+K+'" stroke-width="2"/>'+T(152,143,'Not now',10)+
+      '<rect x="48" y="174" width="70" height="44" rx="12" fill="#ffe14d" stroke="'+K+'" stroke-width="2" transform="rotate(-6 83 196)"/>'+T(58,200,'DONE!',14,K,'transform="rotate(-6 83 196)"')+
+      '<rect x="128" y="186" width="120" height="26" rx="13" fill="#fff" stroke="'+K+'" stroke-width="2"/>'+T(138,203,'📎 proof.png',10)+'</svg>'}},
+
+   {id:'story',name:'Weekly comic recap',f:'Social',tag:'Story mode',
+    pitch:'The agent works quietly, then every Sunday you get a short comic: "This week, Noodle defeated the Lumen+ Gobbler". Real proof screenshots are framed inside the panels.',
+    loop:'Read the weekly episode; tap a panel to see the proof.',ok:'Mid-week "cliffhanger" notification asks you to approve.',str:'Delightful and shareable; makes proof fun.',risk:'Recap, not control; needs a second screen for actions.',
+    s:function(){return '<svg viewBox="0 0 320 230" role="img" aria-label="Comic recap sketch"><rect width="320" height="230" fill="#fff"/>'+
+      '<rect x="8" y="8" width="304" height="26" fill="#ffe14d" stroke="'+K+'" stroke-width="3"/>'+T(16,27,'EPISODE 12 · THE GOBBLER',13,K,'',"Bricolage Grotesque,sans-serif")+
+      '<rect x="8" y="42" width="96" height="120" fill="#e2efff" stroke="'+K+'" stroke-width="3"/>'+gob(30,70,1)+T(14,154,'It appeared…',10)+
+      '<rect x="112" y="42" width="96" height="120" fill="#ffe6f1" stroke="'+K+'" stroke-width="3"/>'+buddy(122,70,.6)+T(118,154,'Noodle got to work',10)+
+      '<rect x="216" y="42" width="96" height="120" fill="#dcf7ee" stroke="'+K+'" stroke-width="3"/><rect x="226" y="58" width="76" height="56" fill="#fff" stroke="'+K+'" stroke-width="2"/>'+T(232,80,'Membership',9)+T(232,94,'canceled ✓',9,'#1fb48b')+T(222,154,'Proof inside!',10)+
+      '<rect x="8" y="170" width="304" height="50" fill="#f1eee8" stroke="'+K+'" stroke-width="3"/>'+T(18,192,'This week: $228/yr saved · 2 chores · 1 site fixed',11)+T(18,210,'Share episode ↗',10,'#6b4ef6')+'</svg>'}},
+
+   {id:'lock',name:'Lives on your lock screen',f:'Fast',tag:'Widgets + live activity',
+    pitch:'You barely open the app. A home-screen widget shows your buddy and what is due; a live activity tracks a run; you approve from the notification.',
+    loop:'Glance at the widget; approve from a notification; done.',ok:'Rich notification with Approve, protected by Face ID.',str:'Least effort of all; feels like magic.',risk:'Small canvas for game elements; platform work.',
+    s:function(){return '<svg viewBox="0 0 320 230" role="img" aria-label="Phone lock screen sketch"><rect width="320" height="230" fill="#dfe8f5"/>'+
+      '<rect x="92" y="6" width="136" height="236" rx="26" fill="#3b3570" stroke="'+K+'" stroke-width="3"/><rect x="134" y="14" width="52" height="12" rx="6" fill="'+K+'"/>'+
+      T(126,62,'9:41',28,'#fff','',"Bricolage Grotesque,sans-serif")+
+      '<rect x="102" y="76" width="116" height="44" rx="14" fill="#fff" opacity=".92"/>'+buddy(106,80,.28)+T(146,94,'Cancelling…',10)+'<rect x="146" y="102" width="62" height="6" rx="3" fill="#e9e4ff"/><rect x="146" y="102" width="44" height="6" rx="3" fill="#6b4ef6"/>'+
+      '<rect x="102" y="128" width="116" height="62" rx="14" fill="#fff" opacity=".96"/>'+T(110,146,'Noodle needs you',10)+T(110,160,'Cancel Lumen+ ($19)?',9,'#57536a')+
+      '<rect x="110" y="168" width="48" height="16" rx="8" fill="#ff6b5a"/>'+T(118,180,'Approve',8.5,'#fff')+'<rect x="162" y="168" width="48" height="16" rx="8" fill="#e9e4ff"/>'+T(171,180,'Not now',8.5)+
+      '<rect x="102" y="198" width="54" height="30" rx="10" fill="#ffc83d" opacity=".95"/>'+T(108,217,'$412/yr',9)+'<rect x="164" y="198" width="54" height="30" rx="10" fill="#1fb48b" opacity=".95"/>'+T(170,217,'2 due',9,'#fff')+'</svg>'}},
+
+   {id:'desk',name:'Paper desk',f:'Calm',tag:'Skeuomorphic',
+    pitch:'A tidy desk. Bills arrive as envelopes in the in-tray; drag one onto your buddy to handle it; it comes back stamped DONE with the proof clipped on.',
+    loop:'Clear the in-tray; finished paperwork stacks up in the out-tray.',ok:'A rubber stamp "APPROVE" you press yourself.',str:'Tactile and very clear for non-technical people.',risk:'Drag-and-drop is fiddly on small phones.',
+    s:function(){return '<svg viewBox="0 0 320 230" role="img" aria-label="Paper desk sketch"><rect width="320" height="230" fill="#b98b5e"/><rect x="0" y="0" width="320" height="230" fill="#c99a6b" opacity=".5"/>'+
+      '<rect x="14" y="20" width="96" height="74" rx="6" fill="#8a5a2b" stroke="'+K+'" stroke-width="2"/>'+T(22,112,'IN',12,'#fff')+
+      '<g transform="rotate(-6 60 50)"><rect x="24" y="30" width="76" height="46" fill="#fff" stroke="'+K+'" stroke-width="2"/><path d="M24 30 l38 26 l38 -26" fill="none" stroke="'+K+'" stroke-width="2"/></g><g transform="rotate(4 60 60)"><rect x="26" y="40" width="76" height="46" fill="#fff6e0" stroke="'+K+'" stroke-width="2"/>'+T(34,72,'Lumen+ $19',10)+'</g>'+
+      buddy(124,58,.62)+'<path d="M104 70 C116 62 120 64 128 74" stroke="'+K+'" stroke-width="2" fill="none" stroke-dasharray="4 4"/>'+
+      '<rect x="210" y="20" width="96" height="74" rx="6" fill="#8a5a2b" stroke="'+K+'" stroke-width="2"/>'+T(218,112,'OUT',12,'#fff')+
+      '<g transform="rotate(5 258 58)"><rect x="220" y="34" width="76" height="46" fill="#fff" stroke="'+K+'" stroke-width="2"/><rect x="230" y="44" width="56" height="22" fill="none" stroke="#e8594a" stroke-width="3"/>'+T(238,61,'DONE',13,'#e8594a')+'</g>'+
+      '<rect x="92" y="150" width="70" height="30" rx="4" fill="#5a3a1f" stroke="'+K+'" stroke-width="2"/><rect x="118" y="130" width="18" height="22" fill="#7a4a2a" stroke="'+K+'" stroke-width="2"/><rect x="88" y="180" width="78" height="14" fill="#ff6b5a" stroke="'+K+'" stroke-width="2"/>'+T(176,184,'press to APPROVE',11,'#fff')+'</svg>'}}
+  ];
+
+  var sel='pet',filter='all';
+  function render(){
+    document.getElementById('grid').innerHTML=C.filter(function(c){return filter==='all'||c.f===filter}).map(function(c){
+      return '<div class="card'+(c.id===sel?' sel':'')+'" role="button" tabindex="0" data-id="'+c.id+'" aria-pressed="'+(c.id===sel)+'">'+
+        '<div class="stage">'+c.s()+'</div><div class="info"><div class="top"><h3>'+c.name+'</h3><span class="tag">'+c.tag+'</span></div>'+
+        '<p class="pitch">'+c.pitch+'</p><dl><dt>Loop</dt><dd>'+c.loop+'</dd><dt>Approve</dt><dd>'+c.ok+'</dd><dt>Strong</dt><dd>'+c.str+'</dd><dt>Risk</dt><dd>'+c.risk+'</dd></dl></div></div>';
+    }).join('');
+    var cur=C.filter(function(c){return c.id===sel})[0];
+    document.getElementById('pick').textContent='Build the '+cur.name+' concept';
+  }
+  var g=document.getElementById('grid');
+  function choose(id){sel=id;render();var n=document.querySelector('[data-id="'+id+'"]');if(n)n.focus({preventScroll:true})}
+  g.addEventListener('click',function(e){var c=e.target.closest('[data-id]');if(c)choose(c.getAttribute('data-id'))});
+  g.addEventListener('keydown',function(e){if((e.key==='Enter'||e.key===' ')&&e.target.matches('[data-id]')){e.preventDefault();choose(e.target.getAttribute('data-id'))}});
+  document.querySelectorAll('[data-f]').forEach(function(b){b.addEventListener('click',function(){filter=b.getAttribute('data-f');document.querySelectorAll('[data-f]').forEach(function(x){x.setAttribute('aria-pressed',String(x===b))});render()})});
+  document.getElementById('copy').addEventListener('click',function(){var b=this,t=document.getElementById('pick').textContent;
+    try{navigator.clipboard.writeText(t).then(function(){b.textContent='Copied'},function(){b.textContent='Select it'})}catch(err){b.textContent='Select it'}
+    setTimeout(function(){b.textContent='Copy'},1800)});
+  render();
+})();
+</script>
