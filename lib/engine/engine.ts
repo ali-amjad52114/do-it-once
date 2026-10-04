@@ -28,6 +28,8 @@ import type { verifyPage } from '@/lib/engine/verify';
 import type { extractApprovalPayload } from '@/lib/engine/extract';
 import { createChoreRunWorkflow, type ChoreRunWorkflow, type FlowState } from '@/lib/mastra/workflows/chore-run';
 import { resolveStepInput } from '@/lib/actions/step-input';
+import { flag } from '@/lib/addons/flags';
+import { onRunVerified } from '@/lib/judge';
 
 type RepoModule = typeof import('@/lib/neon/repo');
 
@@ -558,6 +560,7 @@ export function createRunCore(deps: RunEngineDeps) {
         url: page.url,
         evidence: vr.matched,
       });
+      if (flag('ADDON_JUDGE')) void onRunVerified(runId); // add-on A3: AI judge (display only)
       await emit(runId, 'run.succeeded', summary, { url: page.url, valuePerYear: ctx.skill.valuePerYear });
       await repo.updateRun(runId, { state: 'succeeded', result, completedAt: iso(), error: null });
       await repo.recordSkillOutcome(ctx.skill.id, true);
@@ -573,6 +576,7 @@ export function createRunCore(deps: RunEngineDeps) {
       url: page.url,
       failedRules: vr.failedRules,
     });
+    if (flag('ADDON_JUDGE')) void onRunVerified(runId); // add-on A3: AI judge (display only)
     ctx.run = { ...ctx.run, browserSessionId: ctx.sessionId };
     await failRun(ctx.run, summary, result);
     return flow(ctx, 'halted');

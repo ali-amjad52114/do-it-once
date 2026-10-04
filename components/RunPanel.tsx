@@ -8,6 +8,8 @@ import { ApprovalCard } from './ApprovalCard';
 import { LiveView } from './LiveView';
 import { SuccessHero } from './SuccessHero';
 import { SavedByAgent } from './workspace/SavedByAgent';
+import { JudgeBadge } from './judge/JudgeBadge';
+import { useAddons } from '@/lib/client/addons';
 import { Button, Card, SectionLabel } from './ui';
 
 const PILL: Record<RunState, { label: string; tone: string }> = {
@@ -40,6 +42,7 @@ export function RunPanel({
   onSettled?: (state: RunState) => void;
 }) {
   const stream = useRunStream(runId);
+  const addons = useAddons();
   const { state, run, skill, events, approval, currentStep, liveViewUrl, error } = stream;
   const [busy, setBusy] = useState<'approve' | 'stop' | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
@@ -108,6 +111,7 @@ export function RunPanel({
             <ActivityList lines={lines} />
           </Card>
           <div className="min-w-0 overflow-x-auto">
+            {addons.judge && <JudgeBadge runId={run.id} />}
             <ProofPanel result={run.result} />
           </div>
         </div>

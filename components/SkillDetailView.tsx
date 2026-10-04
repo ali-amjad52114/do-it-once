@@ -7,6 +7,7 @@ import { Wordmark } from './Brand';
 import { pct, runsLabel } from './SkillGrid';
 import { SkillIcon } from './SkillIcon';
 import { Card, SectionLabel } from './ui';
+import { useAddons } from '@/lib/client/addons';
 
 const PREF_LABELS: Record<string, string> = {
   return_reason: 'Reason',
@@ -46,6 +47,7 @@ export function SkillDetailView({ id }: { id: string }) {
   const [data, setData] = useState<{ skill: SkillDetail; runs: SkillRun[] } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const homeHref = useMockHref('/');
+  const addons = useAddons();
 
   useEffect(() => {
     api
@@ -104,6 +106,20 @@ function Detail({ skill, runs }: { skill: SkillDetail; runs: SkillRun[] }) {
         <h1 className="mt-6 font-display text-[44px] leading-[1.02] text-ink sm:text-[64px]">{skill.title}</h1>
         {skill.description && (
           <p className="mt-4 max-w-2xl text-[17px] leading-relaxed text-ink-soft">{skill.description}</p>
+        )}
+        {(addons.guide || addons.mcp) && skill.status === 'active' && (
+          <div className="mt-6 flex flex-wrap gap-2">
+            {addons.guide && skill.startUrl && (
+              <a href={`${skill.startUrl}#dio-guide=${skill.id}`} target="_blank" rel="noreferrer" className="inline-flex h-9 items-center rounded-full border border-line-strong bg-card px-4 text-[14px] text-ink-soft shadow-card transition-colors hover:text-ink">
+                Guide me through it
+              </a>
+            )}
+            {addons.mcp && (
+              <a href={`/api/skills-export/${skill.id}`} download="SKILL.md" className="inline-flex h-9 items-center rounded-full border border-line-strong bg-card px-4 text-[14px] text-ink-soft shadow-card transition-colors hover:text-ink">
+                Download as Claude Skill
+              </a>
+            )}
+          </div>
         )}
         <dl className="mt-8 grid grid-cols-2 gap-3 sm:grid-cols-4">
           {stats.map((s) => (

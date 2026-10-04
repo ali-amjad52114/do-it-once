@@ -2,6 +2,7 @@
 import Link from 'next/link';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { SkillSummary, TodayItem } from '@/lib/contracts';
+import { useAddons } from '@/lib/client/addons';
 import { api, isMockMode } from '@/lib/client/api';
 import { Wordmark } from './Brand';
 import { RunPanel } from './RunPanel';
@@ -16,6 +17,7 @@ function greeting(d: Date) {
 }
 
 export function Home() {
+  const addons = useAddons();
   const [items, setItems] = useState<TodayItem[] | null>(null);
   const [skills, setSkills] = useState<SkillSummary[] | null>(null);
   const [runId, setRunId] = useState<string | null>(null);
@@ -160,6 +162,16 @@ export function Home() {
           >
             Teach a chore
           </Link>
+          {addons.discover && (
+            <Link href="/discover" className="inline-flex h-8 items-center rounded-full px-3 text-[13px] text-ink-faint transition-colors hover:bg-ink/5 hover:text-ink-soft">
+              Discover
+            </Link>
+          )}
+          {addons.mcp && (
+            <Link href="/connect" className="inline-flex h-8 items-center rounded-full px-3 text-[13px] text-ink-faint transition-colors hover:bg-ink/5 hover:text-ink-soft">
+              Connect Claude
+            </Link>
+          )}
           <button
             onClick={reset}
             disabled={resetting}
