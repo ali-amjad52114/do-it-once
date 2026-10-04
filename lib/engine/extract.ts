@@ -27,9 +27,15 @@ function normalize(s: string): string {
   return s.normalize('NFKC').replace(/[\s ]+/g, ' ').trim();
 }
 
+// One-time amounts ("Refund amount $129.00", "Total $49.00") when there is no recurring price.
+const ONE_TIME_PRICE_RE = /(?:refund|total|amount|price)[^$\n]{0,24}\$\s?(\d{1,6}(?:,\d{3})*(?:\.\d{2})?)|\$\s?(\d{1,6}(?:,\d{3})*\.\d{2})/i;
+
 function extractPrice(text: string): string | undefined {
   const m = PRICE_RE.exec(text);
-  if (!m) return undefined;
+  if (!m) {
+    const one = ONE_TIME_PRICE_RE.exec(text);
+    return one ? `$${one[1] ?? one[2]}` : undefined;
+  }
   const whole = m[1];
   const cents = m[2] && !/^\.0+$/.test(m[2]) ? m[2].padEnd(3, '0') : '';
   const period = /^(mo|month)/i.test(m[3]) ? 'month' : 'year';

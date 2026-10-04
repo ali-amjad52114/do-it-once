@@ -33,7 +33,7 @@ describe('extractApprovalPayload', () => {
     expect(p('$9.5 per month')).toBe('$9.50/month');
     expect(p('$228/yr billed annually')).toBe('$228/year');
     expect(p('$1,200 a year')).toBe('$1,200/year');
-    expect(p('Total $19 today')).toBeUndefined();
+    expect(p('Total $19 today')).toBe('$19'); // one-time amounts are shown too (e.g. a $129.00 refund)
   });
 
   it('picks the first price on the page', () => {

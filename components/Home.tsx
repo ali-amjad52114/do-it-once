@@ -1,4 +1,5 @@
 'use client';
+import Link from 'next/link';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { SkillSummary, TodayItem } from '@/lib/contracts';
 import { api, isMockMode } from '@/lib/client/api';
@@ -153,6 +154,12 @@ export function Home() {
               Demo data
             </span>
           )}
+          <Link
+            href="/teach"
+            className="inline-flex h-8 items-center rounded-full px-3 text-[13px] text-ink-faint transition-colors hover:bg-ink/5 hover:text-ink-soft"
+          >
+            Teach a chore
+          </Link>
           <button
             onClick={reset}
             disabled={resetting}
