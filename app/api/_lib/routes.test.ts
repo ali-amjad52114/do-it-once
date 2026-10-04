@@ -182,7 +182,7 @@ describe('POST /api/demo/reset', () => {
     expect(body.ok).toBe(true);
     expect(body.demoSite.ok).toBe(false);
     expect(body.demoSite.error).toContain('ECONNREFUSED');
-    expect(fetchMock.mock.calls[0][1].headers).toEqual({ 'x-reset-token': 'tok' });
+    expect(fetchMock.mock.calls[0][1].headers).toEqual({ 'Content-Type': 'application/json', 'x-reset-token': 'tok' });
     expect(repo.resetDemoState).toHaveBeenCalled();
     vi.unstubAllGlobals();
     vi.unstubAllEnvs();
