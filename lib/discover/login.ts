@@ -8,12 +8,22 @@ const PASSWORD_RE = /pass(word|code)/i;
 
 type El = Pick<InteractiveElement, 'role' | 'name' | 'tag' | 'hidden'>;
 
-/** True when the page asks the user to sign in: a visible password field, or a sign-in URL/title. */
-export function needsLogin(page: Pick<PageState, 'url' | 'title'>, els: El[] = []): boolean {
-  const hasPassword = els.some(
+/** Goals that are ABOUT signing in (e.g. "reset my password") must walk the sign-in pages, not pause on them. */
+const ACCOUNT_GOAL_RE = /\b(reset|forgot|recover|change)\b.*\b(password|passcode)\b|\b(sign[ -]?in|log[ -]?in|create (an )?account|sign[ -]?up)\b/i;
+
+/**
+ * True when the page needs the user to sign in: a visible password field. URL/title alone is not enough
+ * (many flows, like "Forgot password", live under /signin without asking for a password).
+ */
+export function needsLogin(page: Pick<PageState, 'url' | 'title'>, els: El[] = [], goal = ''): boolean {
+  if (ACCOUNT_GOAL_RE.test(goal)) return false;
+  return els.some(
     (e) => !e.hidden && (e.tag === 'input' || e.role === 'textbox' || e.role === 'password') && PASSWORD_RE.test(e.name),
   );
-  if (hasPassword) return true;
+}
+
+/** Kept for callers that only have the URL/title (not used for pausing). */
+export function looksLikeSignInPage(page: Pick<PageState, 'url' | 'title'>): boolean {
   let path = page.url;
   try {
     const u = new URL(page.url);

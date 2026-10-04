@@ -184,7 +184,7 @@ export async function exploreAttempt(deps: ExploreDeps, input: ExploreInput): Pr
       const page = await browser.readPage(sessionId);
       const els = await browser.listInteractive(sessionId);
       // Sign-in page: never type credentials. Pause the discovery so the user signs in in the live view.
-      if (needsLogin(page, els)) {
+      if (needsLogin(page, els, input.goal)) {
         finalPage = page;
         if (input.signedIn) return result('gave_up', 'Still not signed in');
         const r = result('needs_login', `this site needs you to sign in (${page.url})`);
