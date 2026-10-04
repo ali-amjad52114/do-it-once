@@ -44,3 +44,25 @@ model calls through Neon AI Gateway (`neon/...`), Assistant UI chat ("Get rid of
 - The migration renamed a pre-existing empty `users` table to `legacy_users` (unrelated old project).
 - Semantic threshold: "stop paying for this" vs "Cancel subscription" cosine = 0.553 → tune in S3.
 - `docs/ADDONS.md` is untracked and not from this session.
+
+## Final state
+
+**Live:** app at https://neon-agent-ali.fly.dev, fictional demo site at https://do-it-once-demo.fly.dev.
+The AgentMail webhook (`do-it-once-agent@agentmail.to`) points at the Fly app, so email cards appear
+in about 5 s. All 8 sponsors are in the live path: Kernel (browsers and live view), Neon (Postgres,
+pgvector, AI Gateway), Mastra (choreRun suspend/resume, traces), Assistant UI (CommandBar, /chat),
+AgentMail, Exa (heal search), Fly.io (Sprite labels and hosting) and Executor (a real Google Calendar event).
+Cancel, self-heal, Return with post-actions, and Teach replay all work end to end (timings are in
+the README and docs/DEMO_SCRIPT.md). Tests: 150 unit + 7 DB, demo-site 12/10/12, extension 7; CI
+runs in `.github/workflows/ci.yml`.
+
+**Rehearse:**
+1. `curl -X POST https://neon-agent-ali.fly.dev/api/demo/reset` resets the demo state, sets layout v1 and dismisses email cards.
+2. `npx tsx scripts/agentmail-send-demo.ts` sends the renewal email, then click **Run** and **Approve**.
+3. `curl -X POST -H "content-type: application/json" -d '{"layout":"v2"}' https://neon-agent-ali.fly.dev/api/demo/layout`
+   changes the website, then run again to show heal (after that, `npm run db:seed` restores the v1 steps).
+4. Before judging, run `npm run db:seed -- --wipe` and then reset again.
+
+**Limits:** run only one operator, because the laptop and Fly share one DB and demo site. The URL has
+no auth. Every Return run creates a real calendar event. The label is fetched server-side. The demo
+sites are fictional.

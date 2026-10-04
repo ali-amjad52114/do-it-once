@@ -8,8 +8,11 @@ once. It keeps that chore as a skill. When the chore comes back (a renewal email
 time, and stops to ask you before anything you can't undo. It counts the chore as done only after
 it checks the website and saves proof.
 
-> Status: hackathon build. Everything below is in the code on this branch unless it is marked
-> **(landing in Wave B)**. See [Honest status](#honest-status--limitations).
+**Try it:** app at **https://neon-agent-ali.fly.dev**, fictional demo website at
+**https://do-it-once-demo.fly.dev**. Agent inbox: `do-it-once-agent@agentmail.to`.
+
+> Status: hackathon build, deployed on Fly.io. Everything below is in the code on this branch and
+> running live. See [Honest status](#honest-status--limitations) for the limits.
 
 ---
 
@@ -39,7 +42,7 @@ each one and the last selector that worked. It does not store a brittle macro. T
   restart.
 - **The agent proves the result.** Every run ends with verification rules checked against the real
   page (text and URL), plus a screenshot saved as evidence. The run never relies on an LLM saying "done".
-- **Skills heal when websites change** **(landing in Wave B)**. When a stored step no longer
+- **Skills heal when websites change**. When a stored step no longer
   matches the page, the agent researches the current procedure with Exa, explores the live page,
   finishes the chore and saves a new version of the skill.
 
@@ -51,35 +54,51 @@ The 60-second judging story. The full script with clicks, timings and the reset 
 [docs/DEMO_SCRIPT.md](docs/DEMO_SCRIPT.md).
 
 1. **A renewal email arrives.** `npx tsx scripts/agentmail-send-demo.ts` sends "Your Lumen+ Premium
-   membership renews tomorrow" from a demo sender inbox to the agent's AgentMail inbox. Within
-   seconds a Today card appears with the merchant, price and due date, and the line
+   membership renews tomorrow" from `lumen-billing-demo@agentmail.to` to the agent's AgentMail inbox.
+   The webhook hits the Fly app, and in about 5 s a Today card appears with the merchant, price and due date, and the line
    **Matching skill: Cancel subscription**.
 
    ![Today card](docs/screenshots/today.png)
 
-2. **Run** (or type *"Get rid of this subscription"* in the chat). The run panel opens with the
-   agent's activity checklist next to the Kernel live view.
+2. **Run** (or type *"Get rid of this subscription"* in the chat; the first reply takes about
+   10–18 s). The run panel opens with the agent's activity checklist next to the Kernel live view.
 
-   ![Chat finds the skill](docs/screenshots/chat.png)
-   ![Run panel with the Kernel live view](docs/screenshots/live-view.png)
+   ![Run panel: activity list and Kernel live view](docs/screenshots/live-view.png)
 
-3. **The agent stops before the irreversible click.** "Cancel $19/month membership?" The price,
-   renewal date and merchant are read from the page itself.
+3. **The agent stops before the irreversible click** (about 18–31 s after Run). "Cancel $19/month
+   membership?" The price, renewal date and merchant are read from the page itself.
 
    ![Approval card](docs/screenshots/approval.png)
 
-4. **Approve.** The agent clicks the final button, checks the website and shows **CANCELED,
+4. **Approve.** In about 10 s the agent clicks the final button, checks the website and shows **CANCELED,
    $228/year no longer recurring**, with the proof panel (matched evidence, final URL, screenshot,
    timestamp).
 
    ![Canceled, with proof](docs/screenshots/canceled.png)
 
-5. **The website changes, and the skill heals** **(landing in Wave B)**. The demo site switches to
-   layout v2: Billing moves under "Plan & payments" and every button is renamed. The stored path
-   breaks, the agent heals it, and the skill becomes version 2.
+5. **The website changes, and the skill heals.** `POST /api/demo/layout {"layout":"v2"}` switches
+   the demo site to layout v2: Billing moves under "Plan & payments" and every button is renamed.
+   The stored step fails, the agent runs a real Exa search (on this fictional site it finds nothing
+   published, so it says so and reads the live page instead), explores the page, and reaches the
+   approval card at about 55 s. Approve, and about 12 s later the run is verified. The skill is now
+   version 2, and the next run on v2 goes straight through with no heal (approval at about 22 s).
 
-   ![Self-heal timeline](docs/screenshots/heal.png)
-   ![Skill detail at v2](docs/screenshots/skill-v2.png)
+   ![Skill detail: steps, versions, run history](docs/screenshots/skill.png)
+
+6. **Return an item, with post-actions.** The "Return online order" skill fills the Lumen Store
+   return form from its saved preferences and stops for approval (about 30 s). After Approve
+   (about 9 s), the return label is saved to the Fly Sprite (about 3.5 s later) and Executor
+   creates a real Google Calendar drop-off event (about 19 s later).
+
+7. **Teach a new chore.** The Teach Mode extension sends a recording to `/api/teach/recordings`;
+   `/teach` shows it normalized into an intent-based skill, and **Try it now** replays it (approval about 19 s, success
+   about 8 s after Approve).
+
+   ![Teach page](docs/screenshots/teach.png)
+
+The demo website itself is fictional by design:
+
+![Lumen+ demo site, confirm cancellation](docs/screenshots/demo-site.png)
 
 ---
 
@@ -90,12 +109,12 @@ Observe → Learn → Store → Trigger → Replay → Verify → Heal
 | Stage | What happens | Where in the code |
 |---|---|---|
 | **Observe** | Teach Mode: a Chrome MV3 extension records clicks, final typed values, selects and navigations with role, accessible name, label and a best-effort Playwright selector. Passwords, card numbers, OTPs and similar fields are redacted in the browser before anything leaves it. | `extension/recorder.js`, `extension/lib.js`, `extension/background.js`, `extension/README.md`; `Recording` type in `lib/contracts.ts` |
-| **Learn** | A recording becomes an intent-based skill (`SkillStep`: intent, action, target description, expected-after text, locator hint, approval flag). Ingest endpoint and normalizer: **(landing in Wave B)**. Today the demo skill is the seeded "Cancel subscription". | `lib/neon/seed-data.ts` (seeded skill); `app/api/teach/`, `lib/learn/` **(landing in Wave B)** |
+| **Learn** | A recording becomes an intent-based skill (`SkillStep`: intent, action, target description, expected-after text, locator hint, approval flag). `POST /api/teach/recordings` stores the recording and a normalizer (claude-sonnet-4-6 through the Neon AI Gateway) turns it into steps, a verification rule and trigger phrases. | `app/api/teach/`, `lib/learn/`, `app/(dashboard)/teach/`, `db/migrations/005_teach_recordings.sql`; seeded skills in `lib/neon/seed-data.ts` |
 | **Store** | Skills, steps, triggers, preferences, runs, events, approvals and artifacts live in Neon Postgres. Trigger phrases are embedded with `gte-large-en` (1024 dims) through the Neon AI Gateway and stored in `vector(1024)` columns with HNSW cosine indexes. | `db/migrations/001_init.sql`, `002_skill_embeddings.sql`, `lib/neon/repo.ts`, `lib/skills/retrieve.ts`, `scripts/embed-skills.ts` |
 | **Trigger** | AgentMail webhook (Svix-verified) or a pull sync ingests mail. A regex pre-pass plus a Neon AI Gateway classifier extract merchant, amount, cadence and due date. pgvector retrieval matches a skill, and an idempotent `incoming_triggers` row becomes a Today card. Chat requests go through the same retrieval. | `app/api/webhooks/agentmail/route.ts`, `app/api/inbox/sync/route.ts`, `lib/agentmail/ingest.ts`, `lib/triggers/classify.ts`, `lib/triggers/store.ts`, `lib/mastra/agents/chore-agent.ts` |
 | **Replay** | The Mastra workflow `choreRun` runs `prepare → dountil(execute-steps → approval) → verify → complete`. Steps run in a Kernel browser over CDP. Elements are resolved by locator hint first, then role and name, then visible text, then words from the description. It suspends before an irreversible step and resumes on Approve, even from a new process. | `lib/mastra/workflows/chore-run.ts`, `lib/engine/engine.ts`, `lib/kernel/adapter.ts`, `lib/kernel/selectors.ts` |
 | **Verify** | Explicit rules (`text_contains`, `text_absent`, `url_matches`) run against the final page. A screenshot is saved as an artifact, and the result stores the evidence snippets, the final URL and a timestamp. | `lib/engine/verify.ts`, `lib/engine/engine.ts` (`verifyAndFinish`), `components/evidence/ProofPanel.tsx` |
-| **Heal** | A failed step triggers the healer: Exa research for the current procedure, then the agent lists interactive elements on the live page and acts until the step's expected state appears again. That produces skill version N+1 and emits `heal.*` events. **(landing in Wave B)** | `lib/heal/`, `lib/exa/`, the failure branch of `executeSteps` in `lib/engine/engine.ts`, `db/migrations/004_*` **(landing in Wave B)** |
+| **Heal** | A failed step triggers the healer: Exa research for the current procedure, then the agent lists interactive elements on the live page and acts until the step's expected state appears again. That produces skill version N+1 (committed once the run is verified) and emits `heal.*` events. | `lib/heal/`, `lib/exa/`, `components/heal/`, the failure branch of `executeSteps` in `lib/engine/engine.ts`, `db/migrations/004_skill_versions.sql` |
 
 ---
 
@@ -126,7 +145,7 @@ flowchart LR
   kernel["Kernel cloud browser: CDP + live view"]
   site["Website, e.g. Lumen+ demo site"]
   mail["AgentMail inbox"]
-  exa["Exa research (Wave B heal)"]
+  exa["Exa research (heal)"]
   exec["Executor MCP: Google Calendar, .ics fallback"]
   sprite["Fly.io Sprite workspace: receipts, labels"]
   ext["Teach Mode Chrome extension"]
@@ -134,7 +153,7 @@ flowchart LR
   user --> ui
   user --> chat
   mail -->|"webhook or sync"| api
-  ext -->|"recording (Wave B ingest)"| api
+  ext -->|"recording (Teach ingest)"| api
   chat -->|"/api/chat"| agent
   ui --> api
   api --> wf
@@ -148,14 +167,13 @@ flowchart LR
   ui -.->|"live view iframe"| kernel
   wf --> pg
   wf --> store
-  wf -.->|"Wave B"| exa
-  wf -.->|"Wave B post-actions"| exec
-  wf -.->|"Wave B post-actions"| sprite
+  wf -->|"heal"| exa
+  wf -->|"post-action: calendar"| exec
+  wf -->|"post-action: save label"| sprite
 ```
 
-Dotted edges show the wiring that is **(landing in Wave B)**. The Exa, Executor and Sprite
-adapters exist and have tests and smoke scripts, but the workflow does not call them yet. More
-detail, including the run state machine, the data model, event types, healing and retrieval, is in
+The dotted edge is the read-only live view iframe. Exa is called only when a step fails (heal);
+Executor and the Sprite are called as post-actions after a verified run. More detail, including the run state machine, the data model, event types, healing and retrieval, is in
 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
 ---
@@ -218,16 +236,18 @@ Each sponsor does a job the product cannot do without. The file paths point to w
   panel. Browsers are deleted when a run ends or is stopped.
 - **Files:** `lib/kernel/adapter.ts`, `lib/kernel/selectors.ts`, `components/LiveView.tsx`, `scripts/smoke-kernel.ts`.
 
-### Exa: research for self-healing **(landing in Wave B)**
+### Exa: research for self-healing
 - **Why it's necessary:** when a website changes, the stored path is wrong and the page alone may
   not explain the new one. Exa finds the site's current procedure ("how to cancel Lumen+
   membership"), which the healer uses next to the live page. It is only called on a failure,
   never on every replay step.
-- **How (design):** a failed step emits `heal.started`, Exa search emits `heal.research` with
+- **How:** a failed step emits `heal.started`, Exa search emits `heal.research` with
   `{ query, sources }`, and the actions taken on the live page emit `heal.step`. Reaching the expected
   state again emits `heal.succeeded`, and a new `SkillVersion` (`reason: 'heal'`) is written.
-- **Files:** `lib/exa/`, `lib/heal/`, `components/heal/` **(landing in Wave B)**. `exa-js` is installed;
-  today it is only called from the prototype in `legacy/`.
+- **Honest note:** the demo site is fictional, so the real `/search` call returns 0 results. The
+  heal timeline says "nothing published, so reading the live page instead", and the agent heals
+  from the live page alone. On a real site the sources feed the healer's prompt.
+- **Files:** `lib/exa/`, `lib/heal/`, `components/heal/`.
 
 ### AgentMail: the agent's own inbox, so chores find you
 - **Why it's necessary:** chores start in email (renewal notices, order confirmations). Giving
@@ -265,9 +285,10 @@ Each sponsor does a job the product cannot do without. The file paths point to w
   reads and lists files, runs commands, and extracts PDF text with `pdftotext` inside the Sprite.
   File names are sanitized, and paths cannot escape the workspace.
 - **In the run:** a `save_download` post-action (for example, the Lumen Store return label) saves the
-  file into the Sprite and emits `workspace.saved`. **(landing in Wave B)**
+  file into the Sprite at `/home/sprite/workspace/return-labels/…` and emits `workspace.saved`
+  (`lib/actions/`, `db/migrations/006_post_actions.sql`). The label is fetched server-side.
 - **Files:** `lib/fly/workspace.ts`, `lib/fly/paths.ts`, `lib/fly/helpers.ts`, `lib/fly/index.ts`, `scripts/smoke-sprite.ts`.
-  Separately, `demo-site/fly.toml` describes the always-on Fly app for the demo website.
+  Fly.io also hosts the Next.js app (`neon-agent-ali`) and the demo website (`do-it-once-demo`).
 
 ### Executor: API actions when an API exists
 - **Why it's necessary:** the rule is *API or tool available → Executor; human-only website →
@@ -278,8 +299,9 @@ Each sponsor does a job the product cannot do without. The file paths point to w
   stdio. It searches for the Google Calendar insert tool and invokes it. If anything fails (not
   configured, calendar not connected, timeout), it falls back to an RFC 5545 `.ics` file, so the
   run never breaks.
-- **In the run:** a `calendar_event` post-action after a verified return emits `tool.called`.
-  **(landing in Wave B)**
+- **In the run:** a `calendar_event` post-action after a verified return calls
+  `calendar.events.insert` through executor.sh MCP, creates a real Google Calendar event and emits
+  `tool.called`.
 - **Files:** `lib/executor/index.ts`, `lib/executor/mcp.ts`, `lib/executor/ics.ts`, `scripts/smoke-executor.ts`, `scripts/check-executor.ts`.
 
 ---
@@ -356,7 +378,7 @@ From `.env.example`:
 | `KERNEL_API_KEY` | Cloud browsers |
 | `DEMO_SITE_URL` | Public URL of `demo-site/` (tunnel or Fly) |
 | `DEMO_RESET_TOKEN` | Guards the demo site's `/api/reset` and `/api/layout` |
-| `EXA_API_KEY` | Self-heal research **(landing in Wave B)** |
+| `EXA_API_KEY` | Self-heal research |
 | `AGENTMAIL_API_KEY` | Agent inbox |
 | `ASSISTANT_API_KEY` | Listed in the example; Assistant Cloud thread persistence is not wired yet |
 | `SPRITES_TOKEN` | Fly.io Sprite workspace (`SPRITE_TOKEN` is also accepted) |
@@ -369,6 +391,15 @@ second trace exporter), `SPRITE_NAME`, `SPRITE_WORKSPACE`, `SPRITES_API_URL`, `E
 (turns off the local CLI) and `EXECUTOR_BIN`.
 
 ### Switching the demo site layout (self-heal demo)
+
+Easiest, through the app (works on the deployed app too):
+
+```bash
+curl -X POST -H "content-type: application/json" -d '{"layout":"v2"}' https://neon-agent-ali.fly.dev/api/demo/layout
+curl -X POST https://neon-agent-ali.fly.dev/api/demo/reset   # DB demo state + site reset, layout v1, email cards dismissed
+```
+
+Or directly against the demo site:
 
 ```bash
 curl -X POST -H "x-reset-token: $DEMO_RESET_TOKEN" -H "content-type: application/json" \
@@ -407,7 +438,8 @@ app/
   (dashboard)/chat/             full-screen Assistant UI chat
   (dashboard)/skills/[id]/      skill detail: steps, triggers, preferences, runs, version, confidence
   api/                          runs (+ SSE events, approve, stop, trace), today, skills, match,
-                                chat, inbox, webhooks/agentmail, artifacts, demo/reset
+                                chat, inbox, webhooks/agentmail, artifacts, teach,
+                                demo/reset, demo/layout
 components/                     Home, TodayCard, RunPanel, ActivityList, LiveView, ApprovalCard,
                                 SuccessHero, SkillGrid, SkillDetailView, assistant-ui/, evidence/
 lib/
@@ -433,29 +465,31 @@ legacy/                         first prototype (not used by the app)
 
 ## Honest status / limitations
 
-What works end to end today:
-- Today card from the seed or a **real AgentMail email** → Run (or chat) → Kernel browser
-  replays the Cancel subscription skill with the live view embedded → suspends at
-  "Cancel $19/month membership?" → Approve → verified on the website → CANCELED with proof.
-  Runs, events, approvals and screenshots are stored in Neon, and the Mastra snapshot and trace
-  live there too. Approval survives a page refresh and a server restart.
+What works end to end today, live at https://neon-agent-ali.fly.dev (all 8 sponsors in the path):
+- **Cancel:** a real AgentMail email (card in about 5 s via the webhook) or the chat → Kernel
+  browser replays the skill with the live view embedded → suspends at "Cancel $19/month
+  membership?" (about 18–31 s after Run) → Approve → verified on the website about 10 s later →
+  CANCELED with proof. Approval survives a page refresh and a server restart (Mastra snapshot in
+  Neon); each run records about 27 trace spans in Neon.
+- **Self-heal:** on layout v2 the stored step fails, Exa is searched, the agent explores the live
+  page and reaches approval at about 55 s; approve → succeeded about 12 s later, and the skill is
+  saved as v2. The next v2 run needs no heal (approval at about 22 s).
+- **Return with post-actions:** approval at about 30 s, succeeded about 9 s after Approve, label in
+  the Sprite about 3.5 s later, real Google Calendar event through Executor about 19 s later.
+- **Teach:** recording → normalized skill → replay (approval about 19 s, success about 8 s later).
 - Semantic retrieval of skills from paraphrases (pgvector + `gte-large-en`).
-- Adapters for Sprites and Executor (+ `.ics`), the Teach Mode recorder, and demo site v2 plus the
-  Lumen Store return flow. All are tested.
-
-Still in progress (Wave B):
-- **Self-heal** (Exa + live-page exploration + skill versions). Until it lands, a run against
-  layout v2 fails at "Open billing settings". Nothing irreversible happens, and the UI says so.
-- **Return skill post-actions**: the label saved to the Sprite and a calendar reminder through
-  Executor. The adapters exist, but the workflow does not call them yet. "Return online order" is a draft skill.
-- **Teach Mode ingest**: recordings to a new skill (`/api/teach/recordings`). The extension can
-  already record and download JSON.
+- Tests: 150 unit tests plus 7 DB tests, the demo-site suites (12 / 10 / 12) and the extension
+  tests (7). CI runs in `.github/workflows/ci.yml`. License: MIT.
 
 Known limitations:
-- Single demo user (`DEMO_USER_ID`). There is no auth.
-- The Next.js app is not deployed yet. The root `Dockerfile` and `fly.toml` still describe the
-  legacy prototype server, and the demo site runs behind a temporary cloudflared tunnel
-  (`demo-site/fly.toml` is ready for its permanent Fly home).
+- Single demo user (`DEMO_USER_ID`) and **no auth on the public URL**. Anyone with the link can
+  start runs.
+- The laptop app and the Fly app share one Neon database and one demo site. Run only one operator
+  during the demo.
+- Every Return run creates a **real** Google Calendar event.
+- The return label is fetched server-side and written to the Sprite; it is not a browser download.
+- The demo websites (Lumen+ and Lumen Store) are fictional by design, which is also why Exa
+  returns no sources for them.
 - Kernel browsers use no saved login profiles. The demo account is always signed in.
-- Assistant Cloud thread persistence is not wired. The chat is per page session.
-- Each Kernel action is a CDP round trip. Time to the approval card is about 16 s on the demo site.
+- Assistant Cloud thread persistence is not wired. The chat is per page session, and its first
+  reply takes about 10–18 s.

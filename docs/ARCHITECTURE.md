@@ -1,7 +1,7 @@
 # Architecture
 
-This document goes deeper than the [README](../README.md). Parts that are still being built are
-marked **(landing in Wave B)**.
+This document goes deeper than the [README](../README.md). Everything described here is live on
+https://neon-agent-ali.fly.dev.
 
 ## Run state machine
 
@@ -39,14 +39,14 @@ stateDiagram-v2
 - Stop sets an in-process flag that running steps check, denies the pending approval, closes
   the browser and returns the trigger to `pending`. A suspended snapshot is then settled with
   `{ approved: false }`.
-- With self-heal, a failed step will first go to the healer instead of `failed`.
-  **(landing in Wave B)**
+- With self-heal, a failed step first goes to the healer (`lib/heal/`) instead of `failed`.
 
 ## Data model
 
-From `db/migrations/001_init.sql`, `002_skill_embeddings.sql` and `003_email_triggers.sql`. Mastra
-also creates its own `mastra_*` tables (workflow snapshots, spans). The `skill_versions` table
-(004) is **(landing in Wave B)**.
+From `db/migrations/001_init.sql`, `002_skill_embeddings.sql` and `003_email_triggers.sql`. Later
+migrations add `skill_versions` and `skill_heals` (004), `teach_recordings` (005) and
+`personal_skills.post_actions` (006); they are not drawn below. Mastra also creates its own
+`mastra_*` tables (workflow snapshots and about 27 trace spans per run).
 
 ```mermaid
 erDiagram
@@ -176,17 +176,18 @@ list. The run panel receives events over SSE (`GET /api/runs/:id/events`, which 
 | `artifact.saved` | screenshot proof stored |
 | `run.succeeded` / `run.failed` / `run.stopped` | terminal states |
 | `log` | catch-up progress, browser session reopened |
-| `heal.started` / `heal.step` / `heal.research` / `heal.succeeded` / `heal.failed` | self-heal **(landing in Wave B)** |
-| `tool.called` | Executor or `.ics` post-action **(landing in Wave B)** |
-| `workspace.saved` | file saved to the Fly Sprite **(landing in Wave B)** |
+| `heal.started` / `heal.step` / `heal.research` / `heal.succeeded` / `heal.failed` | self-heal |
+| `tool.called` | Executor (real Google Calendar event) or `.ics` post-action |
+| `workspace.saved` | file saved to the Fly Sprite |
 
-## Healing loop (landing in Wave B)
+## Healing loop
 
-The design from `docs/PLAN.md` S5 and `docs/CONTRACTS.md` Wave B:
+Implemented in `lib/heal/`, `lib/exa/` and `components/heal/` (design in `docs/PLAN.md` S5):
 
 1. A stored step fails (target not found, or its `expectedAfter` text never appears).
 2. The healer emits `heal.started`. Exa researches the site's current procedure and emits
-   `heal.research` with the query and sources.
+   `heal.research` with the query and sources. On the fictional demo site Exa returns 0
+   results, and the timeline says "nothing published, so reading the live page instead".
 3. The agent lists the visible interactive elements on the live page
    (`BrowserAdapter.listInteractive`, including collapsed `<details>`) and chooses actions toward
    the step's intent until the expected state appears. Each action emits `heal.step`.
