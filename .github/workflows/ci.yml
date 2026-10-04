@@ -1,0 +1,48 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: Typecheck and tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - run: npm ci
+
+      - name: Typecheck
+        run: npx tsc --noEmit
+
+      - name: Unit tests (DB tests skip without RUN_DB_TESTS)
+        run: npx vitest run
+
+      # Demo-site and extension suites: each runs once its file exists on the branch.
+      - name: Demo site tests
+        run: |
+          for t in demo-site/test.mjs demo-site/test-v2.mjs demo-site/test-store.mjs; do
+            if [ -f "$t" ]; then echo "::group::$t"; node "$t"; echo "::endgroup::"; else echo "skip $t (not on this branch yet)"; fi
+          done
+
+      - name: Extension tests
+        run: |
+          if [ -f extension/test/selector.test.mjs ]; then
+            node --test extension/test/selector.test.mjs
+          else
+            echo "skip extension/test/selector.test.mjs (not on this branch yet)"
+          fi

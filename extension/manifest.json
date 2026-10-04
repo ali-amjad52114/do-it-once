@@ -1,0 +1,22 @@
+{
+  "manifest_version": 3,
+  "name": "Do It Once — Teach Mode",
+  "short_name": "Do It Once",
+  "version": "0.1.0",
+  "description": "Do it once. Your agent does it forever. Record a web chore once so Do It Once can learn it.",
+  "permissions": ["storage", "activeTab", "scripting", "tabs"],
+  "host_permissions": ["<all_urls>", "http://localhost:3000/*"],
+  "background": { "service_worker": "background.js" },
+  "content_scripts": [
+    {
+      "matches": ["http://*/*", "https://*/*"],
+      "js": ["lib.js", "guide/guide-lib.js", "guide/guide.js"],
+      "run_at": "document_idle"
+    }
+  ],
+  "web_accessible_resources": [{ "resources": ["guide/guide.css"], "matches": ["http://*/*", "https://*/*"] }],
+  "action": {
+    "default_title": "Teach your agent",
+    "default_popup": "popup.html"
+  }
+}
