@@ -1,0 +1,14 @@
+@import 'tailwindcss';
+
+/* Design tokens — B5 (Dashboard UI) owns and may extend these. */
+@theme {
+  --font-sans: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+}
+
+:root {
+  color-scheme: light;
+}
+
+body {
+  margin: 0;
+}
