@@ -84,12 +84,11 @@ function isSessionGone(err: unknown): boolean {
 }
 
 /**
- * Demo pacing: each step takes at least STEP_MIN_MS (default 0) so the checklist moves in step with
- * Kernel's live view, which shows page changes with a short streaming delay. Off in tests.
+ * Demo pacing: pause STEP_MIN_MS (default 0) before each browser action so the checklist and Kernel's
+ * live view move together. Off in tests.
  */
-async function paceStep(startedAt: number) {
-  const min = Number(process.env.STEP_MIN_MS ?? 0);
-  const wait = min - (Date.now() - startedAt);
+async function paceStep() {
+  const wait = Number(process.env.STEP_MIN_MS ?? 0);
   if (wait > 0) await new Promise((r) => setTimeout(r, wait));
 }
 
@@ -422,7 +421,9 @@ export function createRunCore(deps: RunEngineDeps) {
 
       const urlBefore = ctx.lastUrl;
       await emit(runId, 'step.started', step.intent, { stepSequence: step.sequence, url: urlBefore, usedLocator: null });
-      const stepStartedAt = Date.now();
+      // Demo pacing BEFORE acting: the checklist shows "● <step>" while the live view still shows the
+      // previous page; the click then happens and the ✓ arrives as the new page appears.
+      await paceStep();
 
       const span = tracer?.start(step, 'step');
       let outcome: ActionOutcome;
@@ -465,7 +466,6 @@ export function createRunCore(deps: RunEngineDeps) {
         await repo.updateStepLocator(step.id, outcome.usedLocator);
         step.locatorHint = outcome.usedLocator;
       }
-      await paceStep(stepStartedAt);
       await emit(runId, 'step.succeeded', `${step.intent} — done`, {
         stepSequence: step.sequence,
         url: ctx.lastUrl,
