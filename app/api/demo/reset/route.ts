@@ -9,12 +9,14 @@ type DemoSiteResult = { ok: boolean; status?: number; error?: string };
 async function resetDemoSite(): Promise<DemoSiteResult> {
   const base = process.env.DEMO_SITE_URL;
   if (!base) return { ok: false, error: 'DEMO_SITE_URL is not set' };
-  const headers: Record<string, string> = {};
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
   if (process.env.DEMO_RESET_TOKEN) headers['x-reset-token'] = process.env.DEMO_RESET_TOKEN;
   try {
+    // A full demo reset also puts the site back on layout v1 (the self-heal demo switches it to v2).
     const res = await fetch(new URL('/api/reset', base), {
       method: 'POST',
       headers,
+      body: JSON.stringify({ layout: 'v1' }),
       signal: AbortSignal.timeout(5000),
       cache: 'no-store',
     });
