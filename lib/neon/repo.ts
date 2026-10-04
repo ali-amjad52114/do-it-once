@@ -60,3 +60,7 @@ export async function setTriggerState(triggerId: string, state: TriggerState): P
 
 // Silence unused-type lint in the stub.
 export type _Unused = SkillStep | RunState;
+
+// ── Demo
+/** Same as `npm run db:seed -- --reset`: Cancel skill back to 3/3, trigger pending, demo runs deleted. */
+export async function resetDemoState(): Promise<void> { return todo('resetDemoState'); }
