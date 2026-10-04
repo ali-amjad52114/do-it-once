@@ -16,7 +16,7 @@ const get = handle(async () => {
   const skills = await listSkills(DEMO_USER_ID);
   return Response.json({
     skills: skills
-      .filter((s) => s.status === 'active')
+      .filter((s) => s.status !== 'archived') // drafts too: in Guide mode the user does the clicking
       .map((s) => ({ id: s.id, title: s.title, startUrl: s.startUrl })),
   });
 });

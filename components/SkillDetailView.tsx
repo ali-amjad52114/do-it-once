@@ -107,14 +107,14 @@ function Detail({ skill, runs }: { skill: SkillDetail; runs: SkillRun[] }) {
         {skill.description && (
           <p className="mt-4 max-w-2xl text-[17px] leading-relaxed text-ink-soft">{skill.description}</p>
         )}
-        {(addons.guide || addons.mcp) && skill.status === 'active' && (
+        {(addons.guide || addons.mcp) && skill.status !== 'archived' && skill.steps.length > 0 && (
           <div className="mt-6 flex flex-wrap gap-2">
             {addons.guide && skill.startUrl && (
               <a href={`${skill.startUrl}#dio-guide=${skill.id}`} target="_blank" rel="noreferrer" className="inline-flex h-9 items-center rounded-full border border-line-strong bg-card px-4 text-[14px] text-ink-soft shadow-card transition-colors hover:text-ink">
                 Guide me through it
               </a>
             )}
-            {addons.mcp && (
+            {addons.mcp && skill.status === 'active' && (
               <a href={`/api/skills-export/${skill.id}`} download="SKILL.md" className="inline-flex h-9 items-center rounded-full border border-line-strong bg-card px-4 text-[14px] text-ink-soft shadow-card transition-colors hover:text-ink">
                 Download as Claude Skill
               </a>
