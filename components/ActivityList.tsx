@@ -1,5 +1,6 @@
 'use client';
 import type { ExecutionEvent, RunState, SkillStep } from '@/lib/contracts';
+import { HealBlock, healEvents } from './heal/HealBlock';
 
 export type LineStatus = 'done' | 'active' | 'waiting' | 'pending' | 'failed' | 'skipped';
 
@@ -8,6 +9,8 @@ export interface ActivityLine {
   label: string;
   detail?: string;
   status: LineStatus;
+  /** Self-heal events shown under the step where the website changed. */
+  heal?: ExecutionEvent[];
 }
 
 const stepOf = (e: ExecutionEvent) =>
@@ -39,6 +42,8 @@ export function buildActivity(
   });
 
   const sorted = [...steps].sort((a, b) => a.sequence - b.sequence);
+  const heal = healEvents(events);
+  const healSeq = heal ? stepOf(heal[0]) : null;
   for (const s of sorted) {
     let status: LineStatus = 'pending';
     if (bad.has(s.sequence) || (state === 'failed' && s.sequence === currentStep && !ok.has(s.sequence))) status = 'failed';
@@ -52,6 +57,7 @@ export function buildActivity(
       label: s.intent,
       detail: status === 'failed' ? ev?.message : status === 'waiting' ? 'Waiting for your OK' : undefined,
       status,
+      ...(heal && healSeq === s.sequence ? { heal } : {}),
     });
   }
 
@@ -150,6 +156,7 @@ export function ActivityList({ lines }: { lines: ActivityLine[] }) {
               {l.label}
               <span className="sr-only"> — {SR[l.status]}</span>
             </p>
+            {l.heal && <HealBlock events={l.heal} />}
             {l.detail && (
               <p className={`mt-0.5 text-[13px] ${l.status === 'failed' ? 'text-danger-ink/80' : 'text-approve-ink'}`}>
                 {l.detail}

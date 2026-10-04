@@ -54,6 +54,12 @@ export interface RunEngineDeps {
   verify: typeof verifyPage;
   extract: typeof extractApprovalPayload;
   now?: () => Date;
+  /** Wave B self-heal hooks (lib/heal). Optional so tests and fakes stay valid. */
+  healer?: {
+    heal(input: { runId: string; sessionId: string; skill: SkillDetail; steps: SkillStep[]; failedIndex: number; failure: string }): Promise<{ steps: SkillStep[]; resumeIndex: number } | null>;
+    restore(runId: string, skill: SkillDetail): Promise<SkillDetail | null>;
+    commit(runId: string): Promise<void>;
+  };
 }
 
 /** RunEngine plus a test helper that resolves once the background work for a run has settled. */
@@ -183,7 +189,7 @@ export function createRunCore(deps: RunEngineDeps) {
     if (!skill) {
       const loaded = await repo.getSkill(run.skillId);
       if (!loaded) throw new Error('The skill for this run no longer exists');
-      skill = loaded;
+      skill = (await deps.healer?.restore(run.id, loaded)) ?? loaded; // heal hook: keep a run's healed path
       skills.set(run.id, skill);
     }
     const steps = [...skill.steps].sort((a, b) => a.sequence - b.sequence);
@@ -417,6 +423,19 @@ export function createRunCore(deps: RunEngineDeps) {
       if (isStopped(runId)) return halted(flow(ctx, 'halted'));
       if (outcome.page?.url) ctx.lastUrl = outcome.page.url;
 
+      if (!outcome.ok && deps.healer && ctx.sessionId && !step.requiresApproval) {
+        // Self-heal hook: re-learn the path on the live page; stops before the irreversible step.
+        const healed = await deps.healer.heal({
+          runId, sessionId: ctx.sessionId, skill: ctx.skill, steps, failedIndex: i, failure: outcome.error ?? 'the step did not work',
+        });
+        if (isStopped(runId)) return halted(flow(ctx, 'halted'));
+        if (healed) {
+          steps.splice(0, steps.length, ...healed.steps);
+          ctx.skill.steps = [...healed.steps];
+          i = healed.resumeIndex - 1;
+          continue;
+        }
+      }
       if (!outcome.ok) {
         const reason = outcome.error ?? 'the step did not work';
         const message = `Couldn't ${lowerFirst(step.intent)}: ${reason}`;
@@ -532,6 +551,7 @@ export function createRunCore(deps: RunEngineDeps) {
     ctx.lastUrl = page.url;
 
     if (vr.passed) {
+      await deps.healer?.commit(runId); // heal hook: verified → write the new skill version
       const summary = successSummary(ctx.skill, merchant);
       const result: RunResult = { success: true, summary, ...base };
       await emit(runId, 'verify.passed', `Verified: ${vr.matched.find((m) => !/^https?:/.test(m)) ?? vr.matched[0] ?? 'the website confirms it'}`, {
