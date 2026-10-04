@@ -16,13 +16,21 @@ function MerchantMark({ name }: { name: string }) {
   );
 }
 
+/** Where an item came from, when it was not seeded (e.g. an email in the agent's inbox). */
+export interface TodaySource {
+  label: string; // "From your inbox · Lumen+ Billing"
+  detail?: string | null; // original email subject (tooltip)
+}
+
 export function TodayCard({
   item,
+  source,
   active,
   busy,
   onRun,
 }: {
   item: TodayItem;
+  source?: TodaySource | null;
   /** A run for this item is currently in progress on the page. */
   active: boolean;
   busy: boolean;
@@ -38,6 +46,20 @@ export function TodayCard({
         <div className="flex min-w-0 flex-1 items-start gap-4">
           <MerchantMark name={item.merchant ?? item.title} />
           <div className="min-w-0">
+            {source && (
+              <p className="mb-1 flex items-center gap-1.5 text-[12px] text-ink-faint" title={source.detail ?? undefined}>
+                <svg viewBox="0 0 24 24" className="size-3.5 shrink-0" aria-hidden>
+                  <path
+                    d="M4 6.5h16v11H4zM4.5 7l7.5 6 7.5-6"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="1.8"
+                    strokeLinejoin="round"
+                  />
+                </svg>
+                <span className="truncate">{source.label}</span>
+              </p>
+            )}
             <p className="text-[17px] font-semibold tracking-tight text-ink">{item.title}</p>
             <p className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-[15px] text-ink-soft">
               {meta.map((m, i) => (
@@ -55,7 +77,7 @@ export function TodayCard({
                     fill="currentColor"
                   />
                 </svg>
-                Skill found: <span className="font-medium text-ink">{item.matchedSkill.title}</span>
+                {source ? 'Matching skill:' : 'Skill found:'} <span className="font-medium text-ink">{item.matchedSkill.title}</span>
               </p>
             ) : (
               <p className="mt-3 text-[13px] text-ink-faint">No skill yet. Do it once and your agent will learn it.</p>
