@@ -78,7 +78,7 @@ Preferences: `{ "confirm_before_cancel": true, "decline_retention_offers": true 
 | 6 | Confirm the cancellation | click | Confirm cancellation button | | Confirm cancellation | `Membership canceled` | `role=button[name="Confirm cancellation"]` | **yes**: "Cancel $19/month membership?" / "Agent reached the final cancellation screen. This is irreversible." |
 
 Verification: `anyOf: [text_contains "Membership canceled", text_contains "Renews: No"]`,
-`allOf: [url_matches "/account/membership"]`.
+`allOf: [url_matches "/account/membership(\?|$)"]` (regex; must not match /cancel).
 
 Display-only skills (history only, no steps needed yet): **Return online order** (icon `return`,
 7 runs / 6 success), **Book haircut** (`haircut`, 9/9), **Renew registration** (`registration`, 1/1).
