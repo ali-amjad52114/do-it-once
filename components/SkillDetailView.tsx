@@ -47,7 +47,6 @@ export function SkillDetailView({ id }: { id: string }) {
   const [data, setData] = useState<{ skill: SkillDetail; runs: SkillRun[] } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const homeHref = useMockHref('/');
-  const addons = useAddons();
 
   useEffect(() => {
     api
@@ -89,6 +88,7 @@ export function SkillDetailView({ id }: { id: string }) {
 }
 
 function Detail({ skill, runs }: { skill: SkillDetail; runs: SkillRun[] }) {
+  const addons = useAddons();
   const rate = skill.runCount ? skill.successCount / skill.runCount : 0;
   const prefs = Object.entries(skill.preferences ?? {});
   const steps = [...skill.steps].sort((a, b) => a.sequence - b.sequence);
