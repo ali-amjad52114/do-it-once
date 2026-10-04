@@ -83,7 +83,7 @@ describe('pollRunStream', () => {
       { run: makeRun({ state: 'waiting_approval', currentStep: 6 }), events: [makeEvent(1), makeEvent(2), makeEvent(3)], approval: makeApproval() },
     ]);
     const frames = await collect({ after: 1, maxTicks: 2 });
-    expect(frames.map((f) => f.kind)).toEqual(['state', 'approval', 'event', 'event']);
+    expect(frames.map((f) => f.kind)).toEqual(['state', 'event', 'event', 'approval']);
     expect(frames[0]).toEqual({ kind: 'state', state: 'waiting_approval', currentStep: 6, liveViewUrl: null });
     expect(frames.filter((f) => f.kind === 'event').map((f) => (f as { event: ExecutionEvent }).event.sequence)).toEqual([2, 3]);
   });
@@ -97,8 +97,8 @@ describe('pollRunStream', () => {
       { run: makeRun({ state: 'succeeded', currentStep: 2, liveViewUrl: 'https://live' }), events: e },
     ]);
     const frames = await collect();
-    expect(frames.map((f) => f.kind)).toEqual(['state', 'event', 'state', 'event', 'event', 'state', 'event', 'done']);
-    expect(frames[2]).toEqual({ kind: 'state', state: 'running', currentStep: 2, liveViewUrl: 'https://live' });
+    expect(frames.map((f) => f.kind)).toEqual(['state', 'event', 'event', 'event', 'state', 'event', 'state', 'done']);
+    expect(frames[4]).toEqual({ kind: 'state', state: 'running', currentStep: 2, liveViewUrl: 'https://live' });
     const done = frames.at(-1) as Extract<RunStreamFrame, { kind: 'done' }>;
     expect(done.run.state).toBe('succeeded');
   });
@@ -149,7 +149,7 @@ describe('pollRunStream', () => {
     vi.mocked(repo.getLatestApproval).mockResolvedValue(null);
     vi.spyOn(console, 'error').mockImplementation(() => {});
     const frames = await collect();
-    expect(frames.map((f) => f.kind)).toEqual(['state', 'event', 'done']);
+    expect(frames.map((f) => f.kind)).toEqual(['event', 'state', 'done']);
   });
 });
 

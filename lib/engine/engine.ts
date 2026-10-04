@@ -110,6 +110,11 @@ export function createRunEngine(deps: RunEngineDeps): RunEngineWithIdle {
       } catch (err) {
         await handleUnexpected(runId, err);
       } finally {
+        // Safety net: if a stop raced with a browser reopen, close whatever session the run holds now.
+        if (stopRequested.has(runId)) {
+          const latest = await repo.getRun(runId).catch(() => null);
+          await closeQuietly(latest?.browserSessionId);
+        }
         active.delete(runId);
         stopRequested.delete(runId);
       }
@@ -242,6 +247,8 @@ export function createRunEngine(deps: RunEngineDeps): RunEngineWithIdle {
       return await fn();
     } catch (err) {
       if (!isSessionGone(err) || ctx.recovered) throw err;
+      // A Stop closes the browser; never reopen (and pay for) a new one after that.
+      if (stopRequested.has(ctx.run.id)) throw new RunAbort('stopped');
       ctx.recovered = true;
       await emit(ctx.run.id, 'log', 'Browser session expired — reopening and catching up', {
         stepSequence: ctx.steps[index]?.sequence ?? ctx.run.currentStep,
@@ -249,6 +256,10 @@ export function createRunEngine(deps: RunEngineDeps): RunEngineWithIdle {
       await closeQuietly(ctx.sessionId);
       await openBrowser(ctx);
       await catchUp(ctx, index);
+      if (stopRequested.has(ctx.run.id)) {
+        await closeQuietly(ctx.sessionId);
+        throw new RunAbort('stopped');
+      }
       return await fn();
     }
   }
@@ -260,6 +271,9 @@ export function createRunEngine(deps: RunEngineDeps): RunEngineWithIdle {
       if (step.requiresApproval) {
         throw new Error(`Can't safely repeat "${step.intent}" to catch up — it is irreversible`);
       }
+      if (stopRequested.has(ctx.run.id)) throw new RunAbort('stopped');
+      // Visible progress so the UI doesn't look stalled while catching up.
+      await emit(ctx.run.id, 'log', `Catching up: ${step.intent}`, { stepSequence: step.sequence, catchUp: true });
       const outcome = await performStep(ctx, step);
       if (outcome.page?.url) ctx.lastUrl = outcome.page.url;
       if (!outcome.ok) {
@@ -511,8 +525,9 @@ export function createRunEngine(deps: RunEngineDeps): RunEngineWithIdle {
       }
       await emit(runId, 'run.stopped', 'Stopped. Nothing else will happen.', { stepSequence: run.currentStep });
       await repo.updateRun(runId, { state: 'stopped', completedAt: iso() });
-      await closeQuietly(run.browserSessionId);
       if (run.triggerId) await repo.setTriggerState(run.triggerId, 'pending');
+      // Close the paid browser in the background so the Stop button answers instantly.
+      void closeQuietly(run.browserSessionId);
       // If no background work holds the run, clear the flag now; otherwise the loop clears it.
       if (!active.has(runId)) stopRequested.delete(runId);
     },

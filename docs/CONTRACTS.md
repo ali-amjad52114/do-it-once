@@ -63,7 +63,7 @@ Locally: `node demo-site/server.mjs`, then the lead exposes it with
 
 **Cancel subscription** — icon `subscription`, valuePerYear `228`,
 startUrl `${DEMO_SITE_URL}/account`, targetDomains `[host of DEMO_SITE_URL]`,
-runCount 3 / successCount 3 (prior history), confidence 1, version 1.
+runCount 0 / successCount 0 (history comes only from real runs), version 1.
 Triggers: "cancel subscription", "get rid of this subscription", "stop paying for this",
 "cancel my membership", "unsubscribe from this service".
 Preferences: `{ "confirm_before_cancel": true, "decline_retention_offers": true }`.
@@ -80,8 +80,8 @@ Preferences: `{ "confirm_before_cancel": true, "decline_retention_offers": true 
 Verification: `anyOf: [text_contains "Membership canceled", text_contains "Renews: No"]`,
 `allOf: [url_matches "/account/membership(\?|$)"]` (regex; must not match /cancel).
 
-Display-only skills (history only, no steps needed yet): **Return online order** (icon `return`,
-7 runs / 6 success), **Book haircut** (`haircut`, 9/9), **Renew registration** (`registration`, 1/1).
+Draft skills (status `draft`, 0 runs, no steps — "not learned yet"): **Return online order** (icon `return`,
+), **Book haircut** (`haircut`), **Renew registration** (`registration`).
 
 Seeded Today trigger: source `seed`, subject "Your Lumen+ membership renews tomorrow",
 payload `{ merchant: "Lumen+", amount: "$19/month", cadence: "monthly", dueLabel: "Renews tomorrow" }`,
@@ -95,7 +95,7 @@ nullable — filled in S3), `skill_steps`, `skill_preferences`, `skill_runs`, `e
 config/payload/result/metadata, sensible FK indexes. Do not touch existing tables (`hello`, `mastra_*`).
 Migrations are plain SQL in `db/migrations/NNN_name.sql`, applied by `scripts/migrate.ts`
 (tracked in `_migrations`). Seed is idempotent (fixed UUIDs, upserts) and `--reset` restores the
-demo state (Cancel skill counts back to 3/3, trigger pending, demo runs deleted).
+demo state (Today trigger pending, no run attached; real run history is kept). `--wipe` deletes all demo runs and zeroes counters.
 
 ## API (B4) — all JSON, `runtime = 'nodejs'`, `dynamic = 'force-dynamic'`
 

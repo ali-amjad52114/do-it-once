@@ -115,6 +115,8 @@ export class KernelBrowserAdapter implements BrowserAdapter {
 
   async goto(sessionId: string, url: string): Promise<ActionOutcome> {
     return this.act(sessionId, async (page) => {
+      // Already there (e.g. open() loaded the start URL): skip the redundant page load.
+      if (sameUrl(page.url(), url)) return { usedLocator: null };
       const res = await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30_000 });
       await settle(page);
       if (res && res.status() >= 400) return { usedLocator: null, error: `HTTP ${res.status()} for ${url}` };
@@ -126,9 +128,8 @@ export class KernelBrowserAdapter implements BrowserAdapter {
     return this.act(sessionId, async (page) => {
       const found = await findElement(page, target, 'click');
       if (!found) return { usedLocator: null, error: notFound(target) };
-      await found.el.scrollIntoViewIfNeeded({ timeout: ACTION_TIMEOUT_MS }).catch(() => {});
+      // click() scrolls into view itself and waits for a triggered navigation to commit.
       await found.el.click({ timeout: ACTION_TIMEOUT_MS });
-      await page.waitForTimeout(250); // let a navigation start before waiting on load state
       await settle(this.connections.get(sessionId)?.page ?? page);
       return { usedLocator: found.locator };
     });
@@ -320,8 +321,11 @@ function candidates(target: ElementTarget, kind: Kind): Candidate[] {
 }
 
 async function firstVisible(loc: Locator): Promise<Locator | null> {
+  // Fast path: the first match is usually the one (saves a count() round trip).
+  const first = loc.first();
+  if (await first.isVisible().catch(() => false)) return first;
   const n = Math.min(await loc.count(), 10);
-  for (let i = 0; i < n; i++) {
+  for (let i = 1; i < n; i++) {
     const el = loc.nth(i);
     if (await el.isVisible().catch(() => false)) return el;
   }
@@ -357,14 +361,16 @@ async function pickPage(browser: Browser): Promise<Page> {
 
 async function settle(page: Page): Promise<void> {
   await page.waitForLoadState('domcontentloaded', { timeout: 15_000 }).catch(() => {});
-  await page.waitForLoadState('networkidle', { timeout: 3000 }).catch(() => {});
+  await page.waitForLoadState('networkidle', { timeout: 1000 }).catch(() => {});
 }
 
 async function readState(page: Page): Promise<PageState> {
   let raw = '';
+  let title = '';
   for (let attempt = 0; attempt < 3; attempt++) {
     try {
-      raw = await page.evaluate(() => document.body?.innerText ?? '');
+      // One round trip for text + title.
+      ({ raw, title } = await page.evaluate(() => ({ raw: document.body?.innerText ?? '', title: document.title ?? '' })));
       break;
     } catch (err) {
       // "Execution context was destroyed" during a navigation: wait and retry.
@@ -372,8 +378,18 @@ async function readState(page: Page): Promise<PageState> {
       await page.waitForLoadState('domcontentloaded', { timeout: 5000 }).catch(() => {});
     }
   }
-  const title = await page.title().catch(() => '');
   return { url: page.url(), title, text: collapseText(raw) };
+}
+
+function sameUrl(a: string, b: string): boolean {
+  try {
+    const x = new URL(a);
+    const y = new URL(b);
+    const path = (u: URL) => u.pathname.replace(/\/$/, '');
+    return x.origin === y.origin && path(x) === path(y) && x.search === y.search;
+  } catch {
+    return false;
+  }
 }
 
 function safeUrl(page: Page): string {

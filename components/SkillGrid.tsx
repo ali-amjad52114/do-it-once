@@ -44,10 +44,18 @@ export function SkillGrid({ skills }: { skills: SkillSummary[] | null }) {
             </div>
             <p className="mt-4 text-[16px] font-semibold leading-snug tracking-tight text-ink sm:mt-6 sm:text-[17px]">{s.title}</p>
             <p className="mt-1 text-[13px] text-ink-soft sm:text-[14px]">
-              {runsLabel(s.runCount)} <span className="text-ink-faint">•</span> {pct(s.successRate)} success
+              {s.status === 'draft' ? (
+                'Not learned yet'
+              ) : s.runCount === 0 ? (
+                'Ready · no runs yet'
+              ) : (
+                <>
+                  {runsLabel(s.runCount)} <span className="text-ink-faint">•</span> {pct(s.successRate)} success
+                </>
+              )}
             </p>
             <p className="mt-auto pt-4 text-[12px] text-ink-faint">
-              v{s.version} · {pct(s.confidence)} confident
+              {s.status === 'draft' ? 'Teach it once to start' : `v${s.version} · ${s.runCount ? `${pct(s.confidence)} confident` : 'learned'}`}
             </p>
           </Link>
         </li>

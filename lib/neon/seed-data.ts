@@ -44,6 +44,7 @@ export interface SeedSkill {
   targetDomains: string[];
   verification: VerificationSpec;
   valuePerYear: number | null;
+  status: 'active' | 'draft';
   runCount: number;
   successCount: number;
   steps: SeedStep[];
@@ -69,8 +70,10 @@ export function cancelSkill(siteUrl = demoSiteUrl()): SeedSkill {
       allOf: [{ type: 'url_matches', value: '/account/membership(\\?|$)' }],
     },
     valuePerYear: 228,
-    runCount: 3,
-    successCount: 3,
+    // Real history only: counts start at 0 and grow with actual runs.
+    status: 'active',
+    runCount: 0,
+    successCount: 0,
     triggers: [
       'cancel subscription',
       'get rid of this subscription',
@@ -126,17 +129,18 @@ export function cancelSkill(siteUrl = demoSiteUrl()): SeedSkill {
   };
 }
 
-const displaySkill = (id: string, title: string, icon: string, description: string, runCount: number, successCount: number): SeedSkill => ({
+// Not learned yet (no steps): shown as drafts until taught in later phases.
+const draftSkill = (id: string, title: string, icon: string, description: string): SeedSkill => ({
   id, title, description, icon, startUrl: null, targetDomains: [], verification: {}, valuePerYear: null,
-  runCount, successCount, steps: [], triggers: [], preferences: {},
+  status: 'draft', runCount: 0, successCount: 0, steps: [], triggers: [], preferences: {},
 });
 
 export function allSeedSkills(siteUrl = demoSiteUrl()): SeedSkill[] {
   return [
     cancelSkill(siteUrl),
-    displaySkill(RETURN_SKILL_ID, 'Return online order', 'return', 'Start a return, pick the refund method and save the label.', 7, 6),
-    displaySkill(HAIRCUT_SKILL_ID, 'Book haircut', 'haircut', 'Book my usual haircut at my usual time.', 9, 9),
-    displaySkill(REGISTRATION_SKILL_ID, 'Renew registration', 'registration', 'Renew my vehicle registration online.', 1, 1),
+    draftSkill(RETURN_SKILL_ID, 'Return online order', 'return', 'Start a return, pick the refund method and save the label.'),
+    draftSkill(HAIRCUT_SKILL_ID, 'Book haircut', 'haircut', 'Book my usual haircut at my usual time.'),
+    draftSkill(REGISTRATION_SKILL_ID, 'Renew registration', 'registration', 'Renew my vehicle registration online.'),
   ];
 }
 

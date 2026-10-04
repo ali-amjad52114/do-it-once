@@ -71,22 +71,28 @@ export async function pollRunStream(runId: string, sink: RunStreamSink, opts: Po
       const [events, approval] = await Promise.all([listEvents(runId, lastSeq), getLatestApproval(runId)]);
       if (sink.isClosed()) return;
 
-      const key = stateKey(run);
-      if (key !== lastState) {
-        lastState = key;
-        sink.send({ kind: 'state', state: run.state, currentStep: run.currentStep, liveViewUrl: run.liveViewUrl });
-      }
-      const aKey = approvalKey(approval);
-      if (approval && aKey !== lastApproval) {
-        lastApproval = aKey;
-        sink.send({ kind: 'approval', approval });
-      }
+      const sendState = () => {
+        const key = stateKey(run!);
+        if (key !== lastState) {
+          lastState = key;
+          sink.send({ kind: 'state', state: run!.state, currentStep: run!.currentStep, liveViewUrl: run!.liveViewUrl });
+        }
+      };
+      // On connect: state first (snapshot). Afterwards: events first, so the UI never shows
+      // a new state before the step event that caused it.
+      if (first) sendState();
       for (const event of events) {
         if (event.sequence <= lastSeq) continue;
         lastSeq = event.sequence;
         if (TERMINAL_EVENTS.has(event.type)) sawTerminalEvent = true;
         sink.send({ kind: 'event', event });
       }
+      const aKey = approvalKey(approval);
+      if (approval && aKey !== lastApproval) {
+        lastApproval = aKey;
+        sink.send({ kind: 'approval', approval });
+      }
+      sendState();
     } catch (err) {
       // Transient DB error: keep the stream open and try again next tick.
       console.error(`[sse] poll failed for run ${runId}:`, err);

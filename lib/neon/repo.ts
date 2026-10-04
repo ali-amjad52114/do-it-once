@@ -19,7 +19,7 @@ import type {
   TriggerState,
 } from '@/lib/contracts';
 import { getSql } from './db';
-import { CANCEL_SKILL_ID, DEMO_TRIGGER_ID, DEMO_USER_ID, SEED_LAST_SUCCESS_INTERVAL } from './seed-data';
+import { DEMO_TRIGGER_ID, DEMO_USER_ID } from './seed-data';
 
 type Row = Record<string, any>;
 
@@ -401,16 +401,30 @@ export async function setTriggerState(triggerId: string, state: TriggerState): P
 
 // ── Demo
 
-/** Same as `npm run db:seed -- --reset`: Cancel skill back to 3/3, trigger pending, demo runs deleted. */
+/**
+ * Same as `npm run db:seed -- --reset`: the Today trigger is pending again and no run is attached to it.
+ * Real history is KEPT: past runs and the skill's run/success counts stay (they only come from actual runs).
+ */
 export async function resetDemoState(): Promise<void> {
+  const sql = getSql();
+  await sql.transaction([
+    sql`
+      UPDATE skill_runs SET state = 'stopped', completed_at = now(), error = 'Reset before finishing'
+      WHERE user_id = ${DEMO_USER_ID} AND state NOT IN ('succeeded', 'failed', 'stopped')`,
+    sql`UPDATE skill_runs SET trigger_id = NULL WHERE trigger_id = ${DEMO_TRIGGER_ID}`,
+    sql`UPDATE incoming_triggers SET state = 'pending', updated_at = now() WHERE id = ${DEMO_TRIGGER_ID}`,
+  ]);
+}
+
+/** `npm run db:seed -- --wipe`: delete every demo run and zero the counters (fresh start, no history). */
+export async function wipeDemoHistory(): Promise<void> {
   const sql = getSql();
   await sql.transaction([
     // Cascades to execution_events, approvals and artifacts.
     sql`DELETE FROM skill_runs WHERE user_id = ${DEMO_USER_ID}`,
     sql`
-      UPDATE personal_skills SET run_count = 3, success_count = 3, confidence = 1,
-        last_success_at = now() - ${SEED_LAST_SUCCESS_INTERVAL}::interval, updated_at = now()
-      WHERE id = ${CANCEL_SKILL_ID}`,
+      UPDATE personal_skills SET run_count = 0, success_count = 0, confidence = 0, last_success_at = NULL, updated_at = now()
+      WHERE user_id = ${DEMO_USER_ID}`,
     sql`UPDATE incoming_triggers SET state = 'pending', updated_at = now() WHERE id = ${DEMO_TRIGGER_ID}`,
   ]);
 }

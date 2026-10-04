@@ -1,14 +1,16 @@
 // Idempotent demo seed (fixed UUIDs + upserts). Usage:
 //   npm run db:seed            upsert user, skills, steps, triggers, preferences, Today trigger
-//   npm run db:seed -- --reset also delete demo runs, restore Cancel counts to 3/3, trigger back to pending
+//   npm run db:seed -- --reset  Today trigger back to pending (keeps real run history)
+//   npm run db:seed -- --wipe   delete all demo runs and zero every skill's counters
 // Re-running updates start_url / target_domains from DEMO_SITE_URL (fallback https://do-it-once-demo.fly.dev).
 import 'dotenv/config';
 import { getSql } from '../lib/neon/db';
-import { resetDemoState } from '../lib/neon/repo';
-import { DEMO_TRIGGER, DEMO_USER, SEED_LAST_SUCCESS_INTERVAL, allSeedSkills, demoSiteUrl } from '../lib/neon/seed-data';
+import { resetDemoState, wipeDemoHistory } from '../lib/neon/repo';
+import { DEMO_TRIGGER, DEMO_USER, allSeedSkills, demoSiteUrl } from '../lib/neon/seed-data';
 
 async function main() {
   const reset = process.argv.includes('--reset');
+  const wipe = process.argv.includes('--wipe');
   const sql = getSql();
   const siteUrl = demoSiteUrl();
   const skills = allSeedSkills(siteUrl);
@@ -25,11 +27,11 @@ async function main() {
     queries.push(sql`
       INSERT INTO personal_skills (id, user_id, title, description, status, version, icon, target_domains, start_url,
         verification, value_per_year, run_count, success_count, confidence, last_success_at)
-      VALUES (${s.id}, ${DEMO_USER.id}, ${s.title}, ${s.description}, 'active', 1, ${s.icon}, ${s.targetDomains}::text[],
+      VALUES (${s.id}, ${DEMO_USER.id}, ${s.title}, ${s.description}, ${s.status}, 1, ${s.icon}, ${s.targetDomains}::text[],
         ${s.startUrl}, ${JSON.stringify(s.verification)}::jsonb, ${s.valuePerYear}, ${s.runCount}, ${s.successCount},
-        ${confidence}, now() - ${SEED_LAST_SUCCESS_INTERVAL}::interval)
+        ${confidence}, NULL)
       ON CONFLICT (id) DO UPDATE SET
-        user_id = EXCLUDED.user_id, title = EXCLUDED.title, description = EXCLUDED.description, status = 'active',
+        user_id = EXCLUDED.user_id, title = EXCLUDED.title, description = EXCLUDED.description, status = EXCLUDED.status,
         icon = EXCLUDED.icon, target_domains = EXCLUDED.target_domains, start_url = EXCLUDED.start_url,
         verification = EXCLUDED.verification, value_per_year = EXCLUDED.value_per_year, updated_at = now()`);
 
@@ -79,9 +81,12 @@ async function main() {
   await sql.transaction(queries);
   console.log(`seeded user ${DEMO_USER.id}, ${skills.length} skills, trigger ${t.id} (site ${siteUrl})`);
 
-  if (reset) {
+  if (wipe) {
+    await wipeDemoHistory();
+    console.log('wipe: demo runs deleted, all counters zeroed, trigger pending');
+  } else if (reset) {
     await resetDemoState();
-    console.log('reset: demo runs deleted, Cancel subscription back to 3/3, trigger pending');
+    console.log('reset: trigger pending, run history kept');
   }
 
   const [summary] = await sql`

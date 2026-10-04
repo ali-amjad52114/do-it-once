@@ -528,7 +528,16 @@ describe('run engine', () => {
     expect(br.opened).toEqual(['sess-1', 'sess-2']);
     const log = db.events.find((e) => e.type === 'log')!;
     expect(log.message).toBe('Browser session expired — reopening and catching up');
-    expect(types(runId).slice(-9)).toEqual([
+    const catchUps = db.events.filter((e) => e.runId === runId && e.metadata.catchUp);
+    expect(catchUps.map((e) => e.message)).toEqual([
+      'Catching up: Open my Lumen+ account',
+      'Catching up: Open billing settings',
+      'Catching up: Open membership management',
+      'Catching up: Start cancellation',
+      'Catching up: Decline the retention offer',
+    ]);
+    const withoutCatchUp = db.events.filter((e) => e.runId === runId && !e.metadata.catchUp).map((e) => e.type);
+    expect(withoutCatchUp.slice(-9)).toEqual([
       'approval.granted',
       'step.started',
       'log',
