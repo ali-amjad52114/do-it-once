@@ -441,7 +441,7 @@ export function createRunEngine(deps: RunEngineDeps): RunEngineWithIdle {
     if (vr.passed) {
       const summary = successSummary(ctx.skill, merchant);
       const result: RunResult = { success: true, summary, ...base };
-      await emit(runId, 'verify.passed', `Verified: ${vr.matched[0] ?? 'the website confirms it'}`, {
+      await emit(runId, 'verify.passed', `Verified: ${vr.matched.find((m) => !/^https?:/.test(m)) ?? vr.matched[0] ?? 'the website confirms it'}`, {
         url: page.url,
         evidence: vr.matched,
       });
