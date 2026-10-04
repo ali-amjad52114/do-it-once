@@ -8,7 +8,14 @@ import { pct, runsLabel } from './SkillGrid';
 import { SkillIcon } from './SkillIcon';
 import { Card, SectionLabel } from './ui';
 
+const PREF_LABELS: Record<string, string> = {
+  return_reason: 'Reason',
+  refund_destination: 'Refund to',
+  dropoff: 'Drop off at',
+  label_format: 'Label',
+};
 const humanKey = (k: string) => {
+  if (PREF_LABELS[k]) return PREF_LABELS[k];
   const s = k.replace(/[_-]+/g, ' ').trim();
   return s.charAt(0).toUpperCase() + s.slice(1);
 };
@@ -130,14 +137,23 @@ function Detail({ skill, runs }: { skill: SkillDetail; runs: SkillRun[] }) {
         <Card className="p-6">
           <SectionLabel>Your preferences</SectionLabel>
           {prefs.length ? (
-            <dl className="divide-y divide-line">
+            <>
+            <ul className="flex flex-wrap gap-2">
               {prefs.map(([k, v]) => (
-                <div key={k} className="flex items-center justify-between gap-4 py-2.5 first:pt-0 last:pb-0">
-                  <dt className="text-[14px] text-ink-soft">{humanKey(k)}</dt>
-                  <dd className="text-right text-[14px] font-medium text-ink">{humanVal(v)}</dd>
-                </div>
+                <li key={k} className="rounded-full bg-paper-deep px-3.5 py-1.5 text-[14px] text-ink">
+                  <span className="text-ink-soft">{humanKey(k)}:</span> <span className="font-medium">{humanVal(v)}</span>
+                </li>
               ))}
-            </dl>
+            </ul>
+            {skill.postActions?.length ? (
+              <p className="mt-4 text-[13px] text-ink-faint">
+                Afterwards:{' '}
+                {skill.postActions
+                  .map((a) => (a.type === 'save_download' ? `save “${a.linkText}” to the workspace /${a.folder}/` : `add “${a.title}” to your calendar`))
+                  .join(' · ')}
+              </p>
+            ) : null}
+            </>
           ) : (
             <p className="text-[14px] text-ink-faint">Your agent uses sensible defaults.</p>
           )}

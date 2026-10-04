@@ -26,14 +26,15 @@ async function main() {
     // Definition fields are refreshed on every seed; history counters only on first insert (or --reset).
     queries.push(sql`
       INSERT INTO personal_skills (id, user_id, title, description, status, version, icon, target_domains, start_url,
-        verification, value_per_year, run_count, success_count, confidence, last_success_at)
+        verification, value_per_year, run_count, success_count, confidence, last_success_at, post_actions)
       VALUES (${s.id}, ${DEMO_USER.id}, ${s.title}, ${s.description}, ${s.status}, 1, ${s.icon}, ${s.targetDomains}::text[],
         ${s.startUrl}, ${JSON.stringify(s.verification)}::jsonb, ${s.valuePerYear}, ${s.runCount}, ${s.successCount},
-        ${confidence}, NULL)
+        ${confidence}, NULL, ${JSON.stringify(s.postActions ?? [])}::jsonb)
       ON CONFLICT (id) DO UPDATE SET
         user_id = EXCLUDED.user_id, title = EXCLUDED.title, description = EXCLUDED.description, status = EXCLUDED.status,
         icon = EXCLUDED.icon, target_domains = EXCLUDED.target_domains, start_url = EXCLUDED.start_url,
-        verification = EXCLUDED.verification, value_per_year = EXCLUDED.value_per_year, updated_at = now()`);
+        verification = EXCLUDED.verification, value_per_year = EXCLUDED.value_per_year,
+        post_actions = EXCLUDED.post_actions, updated_at = now()`);
 
     const stepIds = s.steps.map((st) => st.id);
     // Drop steps that are no longer part of the seed (frees their sequence numbers first).

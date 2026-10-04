@@ -27,6 +27,7 @@ import { TERMINAL_STATES } from '@/lib/contracts';
 import type { verifyPage } from '@/lib/engine/verify';
 import type { extractApprovalPayload } from '@/lib/engine/extract';
 import { createChoreRunWorkflow, type ChoreRunWorkflow, type FlowState } from '@/lib/mastra/workflows/chore-run';
+import { resolveStepInput } from '@/lib/actions/step-input';
 
 type RepoModule = typeof import('@/lib/neon/repo');
 
@@ -274,24 +275,12 @@ export function createRunCore(deps: RunEngineDeps) {
     return new URL(raw, new URL(skill.startUrl).origin).toString();
   }
 
-  function resolveInput(skill: SkillDetail, source: string | null): string {
-    if (!source) return '';
-    if (source.startsWith('literal:')) return source.slice('literal:'.length);
-    if (source.startsWith('pref:')) {
-      const v = skill.preferences?.[source.slice('pref:'.length)];
-      return v == null ? '' : String(v);
-    }
-    return source;
-  }
-
   /** Performs the step's action and checks expectedAfter. Rethrows only BrowserSessionGoneError. */
   async function performStep(ctx: ExecCtx, step: SkillStep): Promise<ActionOutcome> {
     const sid = ctx.sessionId!;
-    const target = {
-      description: step.targetDescription ?? step.config.matchText ?? step.intent,
-      matchText: step.config.matchText ?? null,
-      locatorHint: step.locatorHint,
-    };
+    // literal:/pref: inputs (pref: picks the radio/checkbox label, select option or typed text).
+    const { target, value, error: inputError } = resolveStepInput(ctx.skill, step);
+    if (inputError) return { ok: false, usedLocator: null, page: { url: ctx.lastUrl ?? '', title: '', text: '' }, error: inputError };
     try {
       let outcome: ActionOutcome;
       switch (step.actionType) {
@@ -305,10 +294,10 @@ export function createRunCore(deps: RunEngineDeps) {
           outcome = await browser.click(sid, target);
           break;
         case 'type':
-          outcome = await browser.type(sid, target, resolveInput(ctx.skill, step.inputSource));
+          outcome = await browser.type(sid, target, value ?? '');
           break;
         case 'select':
-          outcome = await browser.select(sid, target, resolveInput(ctx.skill, step.inputSource));
+          outcome = await browser.select(sid, target, value ?? '');
           break;
         case 'wait': {
           const first = alternatives(step.expectedAfter)[0];

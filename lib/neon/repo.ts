@@ -161,12 +161,14 @@ export async function getSkill(skillId: string): Promise<SkillDetail | null> {
   );
   if (!skills[0]) return null;
   const preferences: Record<string, unknown> = {};
-  for (const p of prefs) preferences[p.key] = json(p.value, null);
+  // jsonb comes back parsed: a string preference ("UPS Store") is already the value, not JSON text.
+  for (const p of prefs) preferences[p.key] = p.value ?? null;
   return {
     ...mapSkill(skills[0]),
     steps: steps.map(mapStep),
     triggers: triggers.map((t) => t.phrase as string),
     preferences,
+    postActions: json(skills[0].post_actions, []),
   };
 }
 
