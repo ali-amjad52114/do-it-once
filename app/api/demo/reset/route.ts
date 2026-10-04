@@ -33,7 +33,12 @@ export const POST = handle(async () => {
   const demoSite = await resetDemoSite();
   // Stop active runs first: a run waiting for approval keeps its Kernel browser open on purpose,
   // and only stop() closes it. Otherwise each reset leaks a paid browser.
-  const runs = (await listRuns(DEMO_USER_ID, { limit: 25 }).catch(() => [])) ?? [];
+  let runs: Awaited<ReturnType<typeof listRuns>> = [];
+  try {
+    runs = (await listRuns(DEMO_USER_ID, { limit: 25 })) ?? [];
+  } catch {
+    /* best effort */
+  }
   await Promise.allSettled(runs.filter((r) => !TERMINAL_STATES.includes(r.state)).map((r) => getRunEngine().stop(r.id)));
   await resetDemoState();
   return Response.json({ ok: true, demoSite });
