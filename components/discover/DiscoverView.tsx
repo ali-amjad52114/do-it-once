@@ -3,6 +3,7 @@ import Link from 'next/link';
 import { useEffect, useState } from 'react';
 import { Wordmark } from '@/components/Brand';
 import { LiveView } from '@/components/LiveView';
+import { RunPanel } from '@/components/RunPanel';
 import { Button, Card, SectionLabel, Spinner } from '@/components/ui';
 import type { DiscoveryAttemptView, DiscoveryView, Judgment } from '@/lib/contracts.addons';
 
@@ -59,6 +60,23 @@ export function DiscoverView({ defaultStartUrl }: { defaultStartUrl: string }) {
   const [view, setView] = useState<View | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [runId, setRunId] = useState<string | null>(null);
+  const [starting, setStarting] = useState(false);
+
+  // Run the discovered skill right here: live browser → approval card → verified result.
+  const runSkill = async (skillId: string) => {
+    setStarting(true);
+    try {
+      const res = await fetch('/api/runs', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ skillId }) });
+      const body = await res.json();
+      if (!res.ok) throw new Error(body.error ?? 'Could not start the run');
+      setRunId(body.runId);
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setStarting(false);
+    }
+  };
 
   useEffect(() => {
     if (!id) return;
@@ -185,13 +203,29 @@ export function DiscoverView({ defaultStartUrl }: { defaultStartUrl: string }) {
             {winner.judgment ? `, judge ${winner.judgment.verdict}` : ''}. It is saved as a <strong>draft skill</strong>; one
             verified run makes it active.
           </p>
-          <Link
-            href="/teach"
-            className="inline-flex h-11 items-center rounded-full bg-ink px-5 text-[15px] font-medium text-white hover:bg-ink/90"
-          >
-            Review on Teach and “Try it now”
-          </Link>
+          <div className="flex flex-wrap items-center gap-3">
+            {view.draftSkillId && !runId && (
+              <Button onClick={() => runSkill(view.draftSkillId!)} disabled={starting}>
+                {starting ? 'Starting…' : 'Run it now: I’ll approve the final step'}
+              </Button>
+            )}
+            <Link href="/teach" className="text-[14px] text-ink-soft underline-offset-4 hover:text-ink hover:underline">
+              Review the steps on Teach
+            </Link>
+          </div>
         </Card>
+      )}
+      {runId && (
+        <section className="mt-6">
+          <RunPanel
+            runId={runId}
+            onRetry={(skillId) => runSkill(skillId)}
+            onSettled={(state) => {
+              // A verified run promotes the discovered draft to an active skill (lazy promotion on Teach list).
+              if (state === 'succeeded') void fetch('/api/teach/recordings', { cache: 'no-store' });
+            }}
+          />
+        </section>
       )}
       {view?.state === 'failed' && (
         <Card className="p-5 text-[15px] text-ink-soft">No attempt reached the goal. Try a more specific goal or a different start page.</Card>
