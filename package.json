@@ -5,7 +5,8 @@
   "main": "index.js",
   "scripts": {
     "start": "node server.mjs",
-    "test": "node test.mjs"
+    "test": "node test.mjs",
+    "check": "node check-apis.mjs"
   },
   "repository": {
     "type": "git",
@@ -24,6 +25,7 @@
     "@mastra/memory": "^1.35.0",
     "@mastra/pg": "^1.29.0",
     "@neondatabase/serverless": "^1.2.0",
+    "assistant-cloud": "^0.2.4",
     "dotenv": "^18.0.5",
     "zod": "^4.6.5"
   }
