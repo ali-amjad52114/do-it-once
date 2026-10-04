@@ -1,4 +1,6 @@
-import { resetDemoState } from '@/lib/neon/repo';
+import { listRuns, resetDemoState } from '@/lib/neon/repo';
+import { DEMO_USER_ID, TERMINAL_STATES } from '@/lib/contracts';
+import { getRunEngine } from '@/lib/engine';
 import { errorMessage, handle } from '../../_lib/http';
 
 export const runtime = 'nodejs';
@@ -29,6 +31,10 @@ async function resetDemoSite(): Promise<DemoSiteResult> {
 /** Resets the demo site (best effort) and the DB demo state. `ok` reflects the DB reset. */
 export const POST = handle(async () => {
   const demoSite = await resetDemoSite();
+  // Stop active runs first: a run waiting for approval keeps its Kernel browser open on purpose,
+  // and only stop() closes it. Otherwise each reset leaks a paid browser.
+  const runs = (await listRuns(DEMO_USER_ID, { limit: 25 }).catch(() => [])) ?? [];
+  await Promise.allSettled(runs.filter((r) => !TERMINAL_STATES.includes(r.state)).map((r) => getRunEngine().stop(r.id)));
   await resetDemoState();
   return Response.json({ ok: true, demoSite });
 });
