@@ -3,7 +3,8 @@
 // kernel.browsers.retrieve() after a server restart.
 import Kernel, { ConflictError, NotFoundError } from '@onkernel/sdk';
 import { chromium, type Browser, type Locator, type Page } from 'playwright-core';
-import type { ActionOutcome, BrowserAdapter, BrowserSession, ElementTarget, PageState } from '@/lib/contracts';
+import type { ActionOutcome, BrowserAdapter, BrowserSession, ElementTarget, InteractiveElement, PageState } from '@/lib/contracts';
+import { nameFromLocator, toInteractive, type RawInteractive } from './interactive';
 import {
   CLICK_ROLES,
   SELECT_ROLES,
@@ -126,8 +127,15 @@ export class KernelBrowserAdapter implements BrowserAdapter {
 
   async click(sessionId: string, target: ElementTarget): Promise<ActionOutcome> {
     return this.act(sessionId, async (page) => {
+      // A target hidden inside a closed <details> ("More options") is revealed first.
+      await revealInDetails(page, target).catch(() => false);
       const found = await findElement(page, target, 'click');
       if (!found) return { usedLocator: null, error: notFound(target) };
+      // Clicking the summary of an already open <details> would close it: treat as done.
+      const openSummary = await found.el
+        .evaluate((e) => e.tagName === 'SUMMARY' && !!(e.parentElement as HTMLDetailsElement | null)?.open)
+        .catch(() => false);
+      if (openSummary) return { usedLocator: found.locator };
       // click() scrolls into view itself and waits for a triggered navigation to commit.
       await found.el.click({ timeout: ACTION_TIMEOUT_MS });
       await settle(this.connections.get(sessionId)?.page ?? page);
@@ -186,6 +194,18 @@ export class KernelBrowserAdapter implements BrowserAdapter {
     const conn = await this.getConn(sessionId);
     try {
       return await conn.page.screenshot({ type: 'png', timeout: 15_000 });
+    } catch (err) {
+      await this.assertAlive(sessionId, err);
+      throw err;
+    }
+  }
+
+  /** Visible interactive elements (links, buttons, summaries, inputs, selects); ones inside closed <details> are marked hidden. */
+  async listInteractive(sessionId: string): Promise<InteractiveElement[]> {
+    const conn = await this.getConn(sessionId);
+    try {
+      const raw = (await conn.page.evaluate(COLLECT_INTERACTIVE_JS)) as RawInteractive[];
+      return toInteractive(raw);
     } catch (err) {
       await this.assertAlive(sessionId, err);
       throw err;
@@ -349,6 +369,69 @@ async function findElement(page: Page, target: ElementTarget, kind: Kind): Promi
     await page.waitForTimeout(500);
   }
 }
+
+// ───────────── <details> + interactive listing ─────────────
+
+/** Opens a closed <details> whose hidden content holds a link/button named like the target. */
+async function revealInDetails(page: Page, target: ElementTarget): Promise<boolean> {
+  const name = (target.matchText ?? nameFromLocator(target.locatorHint) ?? '').trim();
+  if (!name) return false;
+  return page.evaluate((needle) => {
+    const n = needle.toLowerCase();
+    for (const d of Array.from(document.querySelectorAll('details:not([open])'))) {
+      const hit = Array.from(d.querySelectorAll('a,button,[role=button],[role=link]')).some((e) =>
+        ((e as HTMLElement).innerText || e.textContent || '').trim().toLowerCase().includes(n),
+      );
+      if (hit) {
+        const summary = d.querySelector('summary') as HTMLElement | null;
+        if (summary) summary.click();
+        else (d as HTMLDetailsElement).open = true;
+        return true;
+      }
+    }
+    return false;
+  }, name);
+}
+
+/** Runs in the page. A plain JS string: tsx/esbuild would inject `__name` helpers into a serialized function. */
+const COLLECT_INTERACTIVE_JS = `(() => {
+  const out = [];
+  const els = Array.from(
+    document.querySelectorAll(
+      'a[href],button,summary,input:not([type=hidden]),select,textarea,[role=button],[role=link],[role=checkbox],[role=radio]',
+    ),
+  );
+  const labelFor = (e) => {
+    const aria = e.getAttribute('aria-label');
+    if (aria) return aria;
+    const by = e.getAttribute('aria-labelledby');
+    if (by) return by.split(/\\s+/).map((id) => document.getElementById(id)?.textContent ?? '').join(' ');
+    if (e.id) {
+      const l = document.querySelector(\`label[for="\${CSS.escape(e.id)}"]\`);
+      if (l) return l.textContent ?? '';
+    }
+    const wrap = e.closest('label');
+    if (wrap) return wrap.textContent ?? '';
+    return '';
+  };
+  for (const e of els) {
+    const tag = e.tagName.toLowerCase();
+    const type = (e.getAttribute('type') ?? '').toLowerCase();
+    const closed = e.closest('details:not([open])');
+    const inClosedDetails = !!closed && !(tag === 'summary' && e.parentElement === closed);
+    const rect = e.getBoundingClientRect();
+    const style = getComputedStyle(e);
+    const visible = rect.width > 0 && rect.height > 0 && style.visibility !== 'hidden' && style.display !== 'none';
+    if (!visible && !inClosedDetails) continue;
+    const isField = tag === 'input' || tag === 'select' || tag === 'textarea';
+    const text = isField
+      ? labelFor(e) || e.getAttribute('placeholder') || e.getAttribute('name') || ''
+      : labelFor(e) || e.innerText || e.textContent || e.value || e.getAttribute('title') || '';
+    out.push({ tag, type, role: e.getAttribute('role'), text, hidden: inClosedDetails });
+    if (out.length >= 80) break;
+  }
+  return out;
+})()`;
 
 // ───────────── page helpers ─────────────
 
