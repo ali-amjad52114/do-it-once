@@ -12,6 +12,19 @@
     <p class="lede" id="lede">Do the chore yourself once. We'll watch the clicks, not the keystrokes.</p>
   </header>
 
+  <nav class="tabs" role="tablist">
+    <button id="tab-teach" class="tab" role="tab" type="button" aria-selected="true">Teach</button>
+    <button id="tab-guide" class="tab" role="tab" type="button" aria-selected="false">Guide</button>
+  </nav>
+
+  <!-- Guide me: walk through a stored skill yourself -->
+  <section id="view-guide" class="view" hidden>
+    <ul id="guide-skills" class="actions skills"></ul>
+    <p id="guide-empty" class="empty" hidden>No skills yet.</p>
+    <p class="fine">Guide highlights each step on the page. You do the clicking, always.</p>
+  </section>
+
+  <div id="teach-pane">
   <!-- idle -->
   <section id="view-idle" class="view" hidden>
     <ol class="steps">
@@ -43,6 +56,7 @@
       </div>
     </div>
   </section>
+  </div>
 
   <p id="msg" class="msg" role="status" hidden></p>
 
@@ -58,5 +72,6 @@
 
   <script src="lib.js"></script>
   <script src="popup.js"></script>
+  <script src="guide/popup-guide.js"></script>
 </body>
 </html>

@@ -7,6 +7,14 @@
   "permissions": ["storage", "activeTab", "scripting", "tabs"],
   "host_permissions": ["<all_urls>", "http://localhost:3000/*"],
   "background": { "service_worker": "background.js" },
+  "content_scripts": [
+    {
+      "matches": ["http://*/*", "https://*/*"],
+      "js": ["lib.js", "guide/guide-lib.js", "guide/guide.js"],
+      "run_at": "document_idle"
+    }
+  ],
+  "web_accessible_resources": [{ "resources": ["guide/guide.css"], "matches": ["http://*/*", "https://*/*"] }],
   "action": {
     "default_title": "Teach your agent",
     "default_popup": "popup.html"

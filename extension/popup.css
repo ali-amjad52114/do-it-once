@@ -123,3 +123,11 @@ h1 {
 @keyframes breathe { 0%, 100% { opacity: 1; } 50% { opacity: .35; } }
 @keyframes fade-up { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
 @media (prefers-reduced-motion: reduce) { * { animation: none !important; } }
+
+/* Teach | Guide tabs (A1 Guide me) */
+.tabs { display: flex; gap: 4px; padding: 3px; margin: 0 0 14px; background: var(--paper-deep); border-radius: 999px; }
+.tab { flex: 1; padding: 7px 10px; border: 0; border-radius: 999px; background: transparent; color: var(--ink-soft); font: 600 12.5px/1 var(--sans); cursor: pointer; }
+.tab[aria-selected="true"] { background: var(--card); color: var(--ink); box-shadow: 0 1px 2px rgb(0 0 0 / .08); }
+.skills li { cursor: pointer; justify-content: space-between; }
+.skills li:hover { background: var(--paper-deep); }
+.skills .go { flex: none; color: var(--ink-faint); font-size: 12px; font-weight: 600; }
