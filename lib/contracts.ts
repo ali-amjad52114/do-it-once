@@ -251,7 +251,8 @@ export interface ActionOutcome {
 
 /** Stateless by session id so a run can reconnect after a server restart. */
 export interface BrowserAdapter {
-  open(opts?: { startUrl?: string; profileName?: string }): Promise<BrowserSession>;
+  /** profileName attaches a Kernel profile read-only unless saveProfile is true (one writer per profile). */
+  open(opts?: { startUrl?: string; profileName?: string; saveProfile?: boolean }): Promise<BrowserSession>;
   goto(sessionId: string, url: string): Promise<ActionOutcome>;
   click(sessionId: string, target: ElementTarget): Promise<ActionOutcome>;
   type(sessionId: string, target: ElementTarget, text: string): Promise<ActionOutcome>;

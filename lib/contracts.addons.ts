@@ -29,13 +29,13 @@ export interface JudgmentView {
 }
 
 // ── A4 Discovery race
-export type DiscoveryState = 'running' | 'judging' | 'done' | 'failed';
+export type DiscoveryState = 'running' | 'judging' | 'done' | 'failed' | 'needs_login';
 
 export interface DiscoveryAttemptView {
   id: string;
   lane: number; // 1..3
   strategy: string; // "menus" | "site search" | "help pages"
-  state: 'running' | 'stopped_at_irreversible' | 'goal_reached' | 'gave_up' | 'failed';
+  state: 'running' | 'stopped_at_irreversible' | 'goal_reached' | 'gave_up' | 'failed' | 'needs_login';
   liveViewUrl: string | null;
   steps: number;
   judgment: Judgment | null;
@@ -51,4 +51,14 @@ export interface DiscoveryView {
   draftSkillId: string | null;
   attempts: DiscoveryAttemptView[];
   createdAt: string;
+  /** Login handoff: set while (or after) the user signs in. The agent never sees the password. */
+  login?: DiscoveryLogin | null;
+}
+
+export interface DiscoveryLogin {
+  state: 'pending' | 'signed_in';
+  profile: string; // Kernel profile, one per site host: site-<host>
+  url: string; // the page that asked for sign-in
+  liveViewUrl: string | null; // INTERACTIVE live view of the login browser (no readOnly)
+  sessionId: string | null;
 }

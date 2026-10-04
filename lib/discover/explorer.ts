@@ -4,6 +4,7 @@
 import { z } from 'zod';
 import type { BrowserAdapter, InteractiveElement, PageState, RecordedAction, Recording, SkillStep } from '@/lib/contracts';
 import { guardClick, type IrreversibleCheck } from '@/lib/heal/guard';
+import { needsLogin } from './login';
 
 export const exploreDecisionSchema = z.object({
   action: z.enum(['click', 'expand', 'type', 'select', 'done', 'give_up']),
@@ -13,7 +14,7 @@ export const exploreDecisionSchema = z.object({
 });
 export type ExploreDecision = z.infer<typeof exploreDecisionSchema>;
 
-export type AttemptState = 'stopped_at_irreversible' | 'goal_reached' | 'gave_up' | 'failed';
+export type AttemptState = 'stopped_at_irreversible' | 'goal_reached' | 'gave_up' | 'failed' | 'needs_login';
 
 export interface ExploreInput {
   goal: string;
@@ -22,6 +23,8 @@ export interface ExploreInput {
   hint: string; // lane strategy prompt
   maxActions?: number; // default 20
   timeLimitMs?: number; // default 150 s
+  profileName?: string | null; // saved site login (Kernel profile), attached read-only
+  signedIn?: boolean; // the user already signed in once: a login page now means "Still not signed in"
 }
 
 export interface ExploreProgress {
@@ -37,6 +40,8 @@ export interface ExploreDeps {
   isIrreversible?: IrreversibleCheck;
   onProgress?: (p: ExploreProgress) => Promise<void> | void;
   now?: () => number;
+  /** Polled before each action: true stops this lane (another lane hit a login page). */
+  shouldStop?: () => boolean;
 }
 
 export interface ExploreResult {
@@ -49,6 +54,7 @@ export interface ExploreResult {
   finalPage: PageState | null;
   screenshot: Buffer | null;
   finalControl: string | null; // name of the irreversible control we stopped at
+  loginUrl?: string | null; // state needs_login: the page that asked for sign-in
 }
 
 const SYSTEM = `You are a careful web agent exploring a website to accomplish a user's goal for the FIRST time. You see the LIVE page and choose ONE next action.
@@ -148,7 +154,7 @@ export async function exploreAttempt(deps: ExploreDeps, input: ExploreInput): Pr
 
   try {
     if (!browser.listInteractive) return result('failed', 'browser cannot list page elements');
-    const session = await browser.open({ startUrl: input.startUrl });
+    const session = await browser.open({ startUrl: input.startUrl, ...(input.profileName ? { profileName: input.profileName, saveProfile: false } : {}) });
     sessionId = session.id;
     liveViewUrl = session.liveViewUrl;
     await progress('browser opened');
@@ -174,8 +180,17 @@ export async function exploreAttempt(deps: ExploreDeps, input: ExploreInput): Pr
         await capture();
         return result('gave_up', 'ran out of time');
       }
+      if (deps.shouldStop?.()) return result('gave_up', 'stopped: another lane found that this site needs you to sign in');
       const page = await browser.readPage(sessionId);
       const els = await browser.listInteractive(sessionId);
+      // Sign-in page: never type credentials. Pause the discovery so the user signs in in the live view.
+      if (needsLogin(page, els)) {
+        finalPage = page;
+        if (input.signedIn) return result('gave_up', 'Still not signed in');
+        const r = result('needs_login', `this site needs you to sign in (${page.url})`);
+        r.loginUrl = page.url;
+        return r;
+      }
       const list = els
         .map(
           (e, i) =>

@@ -67,7 +67,7 @@ export class KernelBrowserAdapter implements BrowserAdapter {
 
   // ───────────── lifecycle ─────────────
 
-  async open(opts: { startUrl?: string; profileName?: string } = {}): Promise<BrowserSession> {
+  async open(opts: { startUrl?: string; profileName?: string; saveProfile?: boolean } = {}): Promise<BrowserSession> {
     if (opts.profileName) await this.ensureProfile(opts.profileName);
     const vp = this.opts.viewport ?? { width: 1280, height: 800 };
     const session = await this.kernel.browsers.create({
@@ -75,7 +75,7 @@ export class KernelBrowserAdapter implements BrowserAdapter {
       stealth: false,
       timeout_seconds: this.opts.timeoutSeconds ?? 1800,
       viewport: { width: vp.width, height: vp.height },
-      ...(opts.profileName ? { profile: { name: opts.profileName, save_changes: true } } : {}),
+      ...(opts.profileName ? { profile: { name: opts.profileName, save_changes: opts.saveProfile === true } } : {}),
     });
     const id = session.session_id;
     try {

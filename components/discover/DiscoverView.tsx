@@ -16,6 +16,7 @@ const STATE_LABEL: Record<Attempt['state'], { text: string; cls: string }> = {
   goal_reached: { text: 'Goal reached', cls: 'bg-success-soft text-success-ink' },
   gave_up: { text: 'Gave up', cls: 'bg-tint-slate text-tint-slate-ink' },
   failed: { text: 'Failed', cls: 'bg-danger-soft text-danger-ink' },
+  needs_login: { text: 'Needs sign-in', cls: 'bg-approve-soft text-approve-ink' },
 };
 
 function JudgeChip({ j }: { j: Judgment | null }) {
@@ -124,6 +125,22 @@ export function DiscoverView({ defaultStartUrl }: { defaultStartUrl: string }) {
     }
   };
 
+  const [continuing, setContinuing] = useState(false);
+  const loginDone = async () => {
+    if (!id) return;
+    setContinuing(true);
+    setError(null);
+    try {
+      const r = await fetch(`/api/discover/${id}/login-done`, { method: 'POST' });
+      const body = (await r.json().catch(() => ({}))) as { error?: string };
+      if (!r.ok) throw new Error(body.error ?? `HTTP ${r.status}`);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Could not continue');
+    } finally {
+      setContinuing(false);
+    }
+  };
+
   const finished = view?.state === 'done' || view?.state === 'failed';
   const running = !!id && !finished;
   const winner = view?.attempts.find((a) => a.id === view.winnerAttemptId) ?? null;
@@ -193,6 +210,33 @@ export function DiscoverView({ defaultStartUrl }: { defaultStartUrl: string }) {
             ))}
           </div>
         </>
+      )}
+
+      {view?.state === 'needs_login' && view.login && (
+        <Card className="mb-8 p-5 ring-2 ring-approve">
+          <SectionLabel>This site needs you to sign in</SectionLabel>
+          <p className="mb-4 max-w-3xl text-[15px] text-ink">
+            Type your password yourself — the agent can’t see or store it. It saves the login for next time.
+          </p>
+          <div className="mb-4 aspect-[16/10] w-full overflow-hidden rounded-xl border border-line-strong bg-paper">
+            {view.login.liveViewUrl ? (
+              <iframe
+                src={view.login.liveViewUrl}
+                title="Sign in to the site"
+                className="h-full w-full"
+                allow="clipboard-read; clipboard-write"
+              />
+            ) : (
+              <div className="flex h-full items-center justify-center text-[14px] text-ink-soft">Opening the browser…</div>
+            )}
+          </div>
+          <div className="flex flex-wrap items-center gap-3">
+            <Button onClick={loginDone} busy={continuing} disabled={continuing}>
+              I’m signed in — continue
+            </Button>
+            <span className="text-[13px] text-ink-faint">Saved as {view.login.profile}</span>
+          </div>
+        </Card>
       )}
 
       {view?.state === 'done' && winner && (

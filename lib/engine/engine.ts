@@ -240,7 +240,8 @@ export function createRunCore(deps: RunEngineDeps) {
   }
 
   async function openBrowser(ctx: ExecCtx) {
-    const session = await browser.open({ startUrl: ctx.skill.startUrl ?? undefined });
+    const profile = ctx.skill.preferences?.browser_profile; // saved Kernel login (discovery login handoff), read-only
+    const session = await browser.open({ startUrl: ctx.skill.startUrl ?? undefined, ...(typeof profile === 'string' ? { profileName: profile } : {}) });
     ctx.sessionId = session.id;
     ctx.run = await repo.updateRun(ctx.run.id, { browserSessionId: session.id, liveViewUrl: session.liveViewUrl });
     await emit(ctx.run.id, 'browser.opened', 'Opened a secure cloud browser', {
