@@ -14,6 +14,9 @@ import type {
   VerificationResult,
   VerificationSpec,
 } from '@/lib/contracts';
+import { InMemoryStore } from '@mastra/core/storage';
+import { MastraStorageExporter, Observability } from '@mastra/observability';
+import type { WorkflowRunState } from '@mastra/core/workflows';
 import { createRunEngine, type EngineRepo } from '@/lib/engine/engine';
 
 // ───────────── Fixtures ─────────────
@@ -370,7 +373,7 @@ function fakeExtract(page: PageState): Approval['payload'] {
   return { price: page.text.match(/\$\d+\/month/)?.[0], merchant: 'Lumen+' };
 }
 
-function setup(browserOpts?: Parameters<typeof createFakeBrowser>[0], verify = fakeVerify) {
+function setup(browserOpts?: Parameters<typeof createFakeBrowser>[0], verify = fakeVerify, storage = new InMemoryStore()) {
   const skill = seededSkill();
   const db = createFakeRepo(skill);
   const br = createFakeBrowser(browserOpts);
@@ -380,10 +383,16 @@ function setup(browserOpts?: Parameters<typeof createFakeBrowser>[0], verify = f
     verify,
     extract: fakeExtract,
     now: () => new Date('2026-10-04T12:00:00.000Z'),
+    storage,
   });
   const types = (runId: string) => db.events.filter((e) => e.runId === runId).map((e) => e.type);
   const run = (runId: string) => db.runs.get(runId)!;
-  return { skill, db, br, engine, types, run };
+  /** The persisted Mastra workflow snapshot for a run (what a fresh process would load). */
+  const snapshot = async (runId: string) => {
+    const wf = await storage.getStore('workflows');
+    return (await wf!.loadWorkflowSnapshot({ workflowName: 'choreRun', runId })) as WorkflowRunState | null;
+  };
+  return { skill, db, br, engine, types, run, storage, snapshot };
 }
 
 const STEP_PAIRS = (count: number) => Array.from({ length: count }, () => ['step.started', 'step.succeeded']).flat();
@@ -392,7 +401,7 @@ const STEP_PAIRS = (count: number) => Array.from({ length: count }, () => ['step
 
 describe('run engine', () => {
   it('runs to the approval step, then approve → verified success with the exact event order', async () => {
-    const { engine, db, br, types, run } = setup();
+    const { engine, db, br, types, run, snapshot } = setup();
     const { runId } = await engine.startRun({ skillId: SKILL_ID, userId: USER_ID, triggerId: TRIGGER_ID });
     expect(db.triggers.get(TRIGGER_ID)).toBe('running');
     await engine.whenIdle(runId);
@@ -409,6 +418,11 @@ describe('run engine', () => {
     expect(db.approvals[0].payload).toMatchObject({ price: '$19/month', pageUrl: `${ORIGIN}/account/membership/cancel/confirm` });
     // navigate resolved against the startUrl origin
     expect(br.calls[0]).toBe(`goto ${ORIGIN}/account`);
+    // Mastra: the workflow is suspended at the approval step, with the approval id in the snapshot.
+    const suspended = await snapshot(runId);
+    expect(suspended?.status).toBe('suspended');
+    const segment = suspended!.context['chore-segment'] as { suspendPayload?: { approvalId?: string; title?: string } };
+    expect(segment.suspendPayload).toMatchObject({ approvalId: db.approvals[0].id, title: 'Cancel $19/month membership?' });
     const billing = db.events.find((e) => e.type === 'step.succeeded' && e.metadata.stepSequence === 2)!;
     expect(billing.metadata).toEqual({ stepSequence: 2, url: `${ORIGIN}/account/billing`, usedLocator: 'role=link[name="Billing"]' });
     expect(db.events.find((e) => e.type === 'step.started' && e.metadata.stepSequence === 2)!.message).toBe('Open billing settings');
@@ -446,6 +460,9 @@ describe('run engine', () => {
     expect(db.outcomes).toEqual([true]);
     expect(db.triggers.get(TRIGGER_ID)).toBe('done');
     expect(br.closed).toEqual(['sess-1']);
+    const finished = await snapshot(runId);
+    expect(finished?.status).toBe('success');
+    expect(finished?.result).toEqual({ runId, state: 'succeeded', success: true });
   });
 
   it('stop while waiting: denies the approval, stops, closes the browser, trigger back to pending', async () => {
@@ -554,11 +571,42 @@ describe('run engine', () => {
     expect(br.calls.filter((c) => c === 'click Confirm cancellation').length).toBeGreaterThanOrEqual(1);
   });
 
-  it('approve after a server restart (fresh engine) continues the run', async () => {
+  it('approve after a server restart: a fresh engine resumes the persisted Mastra snapshot', async () => {
+    const storage = new InMemoryStore();
+    const first = setup(undefined, fakeVerify, storage);
+    const { runId } = await first.engine.startRun({ skillId: SKILL_ID, userId: USER_ID, triggerId: TRIGGER_ID });
+    await first.engine.whenIdle(runId);
+    const before = await first.snapshot(runId);
+    expect(before?.status).toBe('suspended');
+    const preparedAt = (before!.context.prepare as { startedAt: number }).startedAt;
+    first.br.kill('sess-1'); // the old process's browser connection is gone too
+
+    // "Restart": new engine, new Mastra instance, new in-memory state; only storage + DB survive.
+    const restarted = createRunEngine({
+      repo: first.db.repo,
+      browser: first.br.adapter,
+      verify: fakeVerify,
+      extract: fakeExtract,
+      storage,
+    });
+    await restarted.approve(runId);
+    await restarted.whenIdle(runId);
+
+    expect(first.run(runId).state).toBe('succeeded');
+    expect(first.types(runId).filter((t) => t === 'run.started')).toHaveLength(1);
+    const after = await first.snapshot(runId);
+    expect(after?.status).toBe('success');
+    // Resumed from the snapshot (prepare was not re-run), not restarted from scratch.
+    expect((after!.context.prepare as { startedAt: number }).startedAt).toBe(preparedAt);
+    expect(after?.result).toEqual({ runId, state: 'succeeded', success: true });
+    expect(first.db.triggers.get(TRIGGER_ID)).toBe('done');
+  });
+
+  it('approve for a run without a workflow snapshot (pre-Mastra run) still continues it', async () => {
     const first = setup();
     const { runId } = await first.engine.startRun({ skillId: SKILL_ID, userId: USER_ID });
     await first.engine.whenIdle(runId);
-    first.br.kill('sess-1');
+    // Different, empty storage: no snapshot to resume.
     const restarted = createRunEngine({
       repo: first.db.repo,
       browser: first.br.adapter,
@@ -568,6 +616,101 @@ describe('run engine', () => {
     await restarted.approve(runId);
     await restarted.whenIdle(runId);
     expect(first.run(runId).state).toBe('succeeded');
+    expect(first.types(runId).filter((t) => t === 'run.started')).toHaveLength(1);
+    expect(first.br.calls.filter((c) => c === 'click Confirm cancellation')).toHaveLength(1);
+  });
+
+  it('stop after a server restart: denies, stops and settles the suspended snapshot', async () => {
+    const storage = new InMemoryStore();
+    const first = setup(undefined, fakeVerify, storage);
+    const { runId } = await first.engine.startRun({ skillId: SKILL_ID, userId: USER_ID, triggerId: TRIGGER_ID });
+    await first.engine.whenIdle(runId);
+    const restarted = createRunEngine({
+      repo: first.db.repo,
+      browser: first.br.adapter,
+      verify: fakeVerify,
+      extract: fakeExtract,
+      storage,
+    });
+    await restarted.stop(runId);
+    await restarted.whenIdle(runId);
+
+    expect(first.run(runId).state).toBe('stopped');
+    expect(first.db.approvals[0].status).toBe('denied');
+    expect(first.types(runId).slice(-2)).toEqual(['approval.denied', 'run.stopped']);
+    expect(first.br.closed).toEqual(['sess-1']);
+    expect(first.br.isCanceled()).toBe(false);
+    const snap = await first.snapshot(runId);
+    expect(snap?.status).toBe('success');
+    expect(snap?.result).toEqual({ runId, state: 'stopped', success: false });
+  });
+
+  it('stop while the workflow is executing: halts, never asks for approval, closes every browser', async () => {
+    const { engine, db, br, types, run } = setup();
+    const { runId } = await engine.startRun({ skillId: SKILL_ID, userId: USER_ID, triggerId: TRIGGER_ID });
+    await engine.stop(runId);
+    await engine.whenIdle(runId);
+
+    expect(run(runId).state).toBe('stopped');
+    expect(db.approvals).toHaveLength(0);
+    expect(types(runId)).not.toContain('approval.requested');
+    expect(types(runId)).not.toContain('run.failed');
+    expect(br.opened.every((sid) => br.closed.includes(sid))).toBe(true);
+    expect(db.triggers.get(TRIGGER_ID)).toBe('pending');
+    expect(br.isCanceled()).toBe(false);
+  });
+
+  it('supports several approval gates in one skill (workflow loop)', async () => {
+    const { engine, db, skill, types, run } = setup();
+    const s4 = skill.steps.find((x) => x.sequence === 4)!;
+    s4.requiresApproval = true;
+    s4.config.approval = { title: 'Start cancelling?', description: 'First gate' };
+    const { runId } = await engine.startRun({ skillId: SKILL_ID, userId: USER_ID });
+    await engine.whenIdle(runId);
+    expect(run(runId).state).toBe('waiting_approval');
+    expect(run(runId).currentStep).toBe(4);
+    await engine.approve(runId);
+    await engine.whenIdle(runId);
+    expect(run(runId).state).toBe('waiting_approval');
+    expect(run(runId).currentStep).toBe(6);
+    await engine.approve(runId);
+    await engine.whenIdle(runId);
+    expect(run(runId).state).toBe('succeeded');
+    expect(db.approvals.map((a) => [a.stepSequence, a.status])).toEqual([
+      [4, 'approved'],
+      [6, 'approved'],
+    ]);
+    expect(types(runId).filter((t) => t === 'approval.requested')).toHaveLength(2);
+  });
+
+  it('records a Mastra trace for the run (workflow + step spans, one per browser step)', async () => {
+    const storage = new InMemoryStore();
+    const observability = new Observability({
+      configs: { default: { serviceName: 'test', exporters: [new MastraStorageExporter({ maxBatchWaitMs: 10 })] } },
+    });
+    const skill = seededSkill();
+    const db = createFakeRepo(skill);
+    const br = createFakeBrowser();
+    const engine = createRunEngine({ repo: db.repo, browser: br.adapter, verify: fakeVerify, extract: fakeExtract, storage, observability });
+    const { runId } = await engine.startRun({ skillId: SKILL_ID, userId: USER_ID });
+    await engine.whenIdle(runId);
+    await engine.approve(runId);
+    await engine.whenIdle(runId);
+    expect(db.runs.get(runId)!.state).toBe('succeeded');
+
+    const store = (await storage.getStore('observability'))!;
+    const listed = (await store.listTraces({ filters: { runId } } as Parameters<typeof store.listTraces>[0])) as unknown as {
+      spans: Array<{ traceId: string }>;
+    };
+    const traceIds = [...new Set(listed.spans.map((s) => s.traceId))];
+    const names: string[] = [];
+    for (const traceId of traceIds) names.push(...((await store.getTrace({ traceId }))?.spans ?? []).map((s) => s.name));
+    expect(names).toContain("workflow run: 'choreRun'");
+    expect(names).toContain("workflow step: 'prepare'");
+    expect(names).toContain("workflow step: 'approval'");
+    expect(names).toContain("workflow step: 'verify'");
+    expect(names).toContain('browser step 2: Open billing settings');
+    expect(names).toContain('browser step 6: Confirm the cancellation');
   });
 
   it('guards against double execution of approve, and approve while the run is executing', async () => {

@@ -1,6 +1,16 @@
-// Run engine (B3): executes a skill's steps through a BrowserAdapter, writes execution events,
+// Run engine: executes a skill's steps through a BrowserAdapter, writes execution events,
 // pauses before irreversible steps, resumes after approval and verifies the final page.
-// Server-only. See docs/CONTRACTS.md "Run engine semantics (B3)".
+// Server-only. See docs/CONTRACTS.md "Run engine semantics" + Wave A "M1".
+//
+// Orchestration is a Mastra workflow (`choreRun`, lib/mastra/workflows/chore-run.ts):
+//   prepare → loop[ execute-steps → approval (suspend/resume) ] → verify → complete
+// This file holds (1) the run *core*: the step logic the workflow steps call (Kernel actions,
+// recovery, events, approvals, verification), and (2) the `RunEngine` facade that maps
+// startRun / approve / stop onto Mastra `createRun().start()`, `resume()` and `cancel()`.
+// The Mastra workflow runId is our skill_runs.id, so nothing extra has to be stored.
+import { Mastra } from '@mastra/core/mastra';
+import { InMemoryStore, type MastraCompositeStore } from '@mastra/core/storage';
+import type { ObservabilityEntrypoint } from '@mastra/core/observability';
 import type {
   ActionOutcome,
   Approval,
@@ -16,6 +26,7 @@ import type {
 import { TERMINAL_STATES } from '@/lib/contracts';
 import type { verifyPage } from '@/lib/engine/verify';
 import type { extractApprovalPayload } from '@/lib/engine/extract';
+import { createChoreRunWorkflow, type ChoreRunWorkflow, type FlowState } from '@/lib/mastra/workflows/chore-run';
 
 type RepoModule = typeof import('@/lib/neon/repo');
 
@@ -49,17 +60,25 @@ export interface RunEngineWithIdle extends RunEngine {
   whenIdle(runId: string): Promise<void>;
 }
 
+/** Optional per-browser-step tracing hook (the workflow wires it to Mastra child spans). */
+export interface StepTracer {
+  start(step: SkillStep, kind: 'step' | 'catch-up'): { end(outcome: ActionOutcome): void; fail(err: unknown): void };
+}
+
 const WAIT_FOR_TEXT_MS = 8000;
 
-/** Raised to abort the background loop with a readable message (already the run's error). */
-class RunAbort extends Error {}
+/** Raised to abort background work with a readable message (already the run's error). */
+export class RunAbort extends Error {}
 
 function isSessionGone(err: unknown): boolean {
   return !!err && typeof err === 'object' && (err as { name?: unknown }).name === 'BrowserSessionGoneError';
 }
 
-function errorMessage(err: unknown): string {
+export function errorMessage(err: unknown): string {
   if (err instanceof Error) return err.message || err.name;
+  if (err && typeof err === 'object' && typeof (err as { message?: unknown }).message === 'string') {
+    return (err as { message: string }).message;
+  }
   return String(err);
 }
 
@@ -80,15 +99,43 @@ function findAlternative(text: string, alts: string[]): string | null {
   return alts.find((a) => hay.includes(a.toLowerCase())) ?? null;
 }
 
-export function createRunEngine(deps: RunEngineDeps): RunEngineWithIdle {
+/** Mastra trace id for a run: the run UUID without dashes (32 hex chars), so start + every resume share one trace. */
+export function traceIdForRun(runId: string): string | undefined {
+  const hex = runId.replace(/-/g, '').toLowerCase();
+  return /^[0-9a-f]{1,32}$/.test(hex) ? hex : undefined;
+}
+
+interface ExecCtx {
+  run: SkillRun;
+  skill: SkillDetail;
+  steps: SkillStep[];
+  sessionId: string | null;
+  lastUrl: string | null;
+  recovered: boolean;
+}
+
+export interface ApprovalRequest {
+  approvalId: string;
+  stepSequence: number;
+  title: string;
+  payload: Approval['payload'];
+}
+
+// ═════════════════════════ Run core (called by the Mastra workflow steps) ═════════════════════════
+
+export type RunCore = ReturnType<typeof createRunCore>;
+
+export function createRunCore(deps: RunEngineDeps) {
   const { repo, browser, verify, extract } = deps;
   const now = deps.now ?? (() => new Date());
   const iso = () => now().toISOString();
 
-  /** Runs with background work in flight (or being set up). Guards against double execution. */
+  /** Runs with background work in flight in this process. Guards against double execution. */
   const active = new Set<string>();
+  /** Stop was pressed while background work was in flight: steps check this and halt. */
   const stopRequested = new Set<string>();
-  const tasks = new Map<string, Promise<void>>();
+  /** Skill per run, loaded once per process (locator updates are applied to it in place). */
+  const skills = new Map<string, SkillDetail>();
 
   const emit = (runId: string, type: EventType, message: string, metadata: Record<string, unknown> = {}) =>
     repo.appendEvent(runId, type, message, metadata);
@@ -100,28 +147,6 @@ export function createRunEngine(deps: RunEngineDeps): RunEngineWithIdle {
     } catch {
       /* already gone */
     }
-  }
-
-  /** Starts background execution. Caller must already hold the `active` slot for runId. */
-  function launch(runId: string) {
-    const task = (async () => {
-      try {
-        await execute(runId);
-      } catch (err) {
-        await handleUnexpected(runId, err);
-      } finally {
-        // Safety net: if a stop raced with a browser reopen, close whatever session the run holds now.
-        if (stopRequested.has(runId)) {
-          const latest = await repo.getRun(runId).catch(() => null);
-          await closeQuietly(latest?.browserSessionId);
-        }
-        active.delete(runId);
-        stopRequested.delete(runId);
-      }
-    })().catch(() => {
-      /* handleUnexpected never rethrows, but never let a rejection escape */
-    });
-    tasks.set(runId, task);
   }
 
   async function handleUnexpected(runId: string, err: unknown) {
@@ -146,89 +171,47 @@ export function createRunEngine(deps: RunEngineDeps): RunEngineWithIdle {
     await closeQuietly(run.browserSessionId);
     await repo.recordSkillOutcome(run.skillId, false);
     if (run.triggerId) await repo.setTriggerState(run.triggerId, 'pending');
+    skills.delete(run.id);
   }
 
-  async function execute(runId: string) {
-    let run = await repo.getRun(runId);
-    if (!run) throw new Error(`Run ${runId} not found`);
-    if (TERMINAL_STATES.includes(run.state)) return;
-    const skill = await repo.getSkill(run.skillId);
-    if (!skill) throw new Error('The skill for this run no longer exists');
-
+  /** Rebuilds the in-memory execution context from the run row + the workflow's flow state. */
+  async function loadCtx(state: FlowState): Promise<ExecCtx> {
+    const run = await repo.getRun(state.runId);
+    if (!run) throw new Error(`Run ${state.runId} not found`);
+    let skill = skills.get(run.id);
+    if (!skill) {
+      const loaded = await repo.getSkill(run.skillId);
+      if (!loaded) throw new Error('The skill for this run no longer exists');
+      skill = loaded;
+      skills.set(run.id, skill);
+    }
     const steps = [...skill.steps].sort((a, b) => a.sequence - b.sequence);
-    const resuming = run.state === 'resumed';
-
-    if (!resuming) {
-      run = await repo.updateRun(runId, { state: 'running' });
-      await emit(runId, 'run.started', `Starting: ${skill.title}`, {});
-    }
-
-    const ctx: ExecCtx = { run, skill, steps, sessionId: run.browserSessionId, lastUrl: null, recovered: false };
-
-    const from = Math.max(run.currentStep, 1);
-    const found = steps.findIndex((s) => s.sequence >= from);
-    const startIndex = found === -1 ? steps.length : found;
-
-    if (!ctx.sessionId) {
-      await openBrowser(ctx);
-      if (startIndex > 0) await catchUp(ctx, startIndex);
-    }
-
-    for (let i = startIndex; i < steps.length; i++) {
-      const step = steps[i];
-      if (stopRequested.has(runId)) return;
-      ctx.run = await repo.updateRun(runId, { currentStep: step.sequence });
-
-      if (step.requiresApproval) {
-        const latest = await repo.getLatestApproval(runId);
-        const approved = latest && latest.stepSequence === step.sequence && latest.status === 'approved';
-        if (!approved) {
-          await requestApproval(ctx, step, i);
-          return; // browser stays open
-        }
-      }
-
-      const urlBefore = ctx.lastUrl;
-      await emit(runId, 'step.started', step.intent, { stepSequence: step.sequence, url: urlBefore, usedLocator: null });
-
-      const outcome = await withRecovery(ctx, i, () => performStep(ctx, step));
-      if (stopRequested.has(runId)) return;
-      if (outcome.page?.url) ctx.lastUrl = outcome.page.url;
-
-      if (!outcome.ok) {
-        const reason = outcome.error ?? 'the step did not work';
-        const message = `Couldn't ${lowerFirst(step.intent)}: ${reason}`;
-        await emit(runId, 'step.failed', message, {
-          stepSequence: step.sequence,
-          url: ctx.lastUrl,
-          usedLocator: outcome.usedLocator,
-        });
-        await failRun(ctx.run, message);
-        return;
-      }
-
-      if (outcome.usedLocator && outcome.usedLocator !== step.locatorHint) {
-        await repo.updateStepLocator(step.id, outcome.usedLocator);
-        step.locatorHint = outcome.usedLocator;
-      }
-      await emit(runId, 'step.succeeded', `${step.intent} — done`, {
-        stepSequence: step.sequence,
-        url: ctx.lastUrl,
-        usedLocator: outcome.usedLocator,
-      });
-    }
-
-    if (stopRequested.has(runId)) return;
-    await verifyAndFinish(ctx);
+    return {
+      run,
+      skill,
+      steps,
+      sessionId: run.browserSessionId ?? state.sessionId,
+      lastUrl: state.lastUrl,
+      recovered: state.recovered,
+    };
   }
 
-  interface ExecCtx {
-    run: SkillRun;
-    skill: SkillDetail;
-    steps: SkillStep[];
-    sessionId: string | null;
-    lastUrl: string | null;
-    recovered: boolean;
+  function flow(ctx: ExecCtx, status: FlowState['status'], pendingStep: number | null = null): FlowState {
+    return { runId: ctx.run.id, sessionId: ctx.sessionId, lastUrl: ctx.lastUrl, recovered: ctx.recovered, status, pendingStep };
+  }
+
+  function halted(state: FlowState): FlowState {
+    return { ...state, status: 'halted', pendingStep: null };
+  }
+
+  function isStopped(runId: string) {
+    return stopRequested.has(runId);
+  }
+
+  function startIndexOf(ctx: ExecCtx): number {
+    const from = Math.max(ctx.run.currentStep, 1);
+    const found = ctx.steps.findIndex((s) => s.sequence >= from);
+    return found === -1 ? ctx.steps.length : found;
   }
 
   async function openBrowser(ctx: ExecCtx) {
@@ -242,21 +225,21 @@ export function createRunEngine(deps: RunEngineDeps): RunEngineWithIdle {
   }
 
   /** Runs `fn`; if the browser session is gone, reopens once, fast-replays steps before `index`, retries. */
-  async function withRecovery<T>(ctx: ExecCtx, index: number, fn: () => Promise<T>): Promise<T> {
+  async function withRecovery<T>(ctx: ExecCtx, index: number, fn: () => Promise<T>, tracer?: StepTracer): Promise<T> {
     try {
       return await fn();
     } catch (err) {
       if (!isSessionGone(err) || ctx.recovered) throw err;
       // A Stop closes the browser; never reopen (and pay for) a new one after that.
-      if (stopRequested.has(ctx.run.id)) throw new RunAbort('stopped');
+      if (isStopped(ctx.run.id)) throw new RunAbort('stopped');
       ctx.recovered = true;
       await emit(ctx.run.id, 'log', 'Browser session expired — reopening and catching up', {
         stepSequence: ctx.steps[index]?.sequence ?? ctx.run.currentStep,
       });
       await closeQuietly(ctx.sessionId);
       await openBrowser(ctx);
-      await catchUp(ctx, index);
-      if (stopRequested.has(ctx.run.id)) {
+      await catchUp(ctx, index, tracer);
+      if (isStopped(ctx.run.id)) {
         await closeQuietly(ctx.sessionId);
         throw new RunAbort('stopped');
       }
@@ -265,44 +248,23 @@ export function createRunEngine(deps: RunEngineDeps): RunEngineWithIdle {
   }
 
   /** Re-executes steps [0, index) quietly in the current browser to get back to where the run was. */
-  async function catchUp(ctx: ExecCtx, index: number) {
+  async function catchUp(ctx: ExecCtx, index: number, tracer?: StepTracer) {
     for (let i = 0; i < index; i++) {
       const step = ctx.steps[i];
       if (step.requiresApproval) {
         throw new Error(`Can't safely repeat "${step.intent}" to catch up — it is irreversible`);
       }
-      if (stopRequested.has(ctx.run.id)) throw new RunAbort('stopped');
+      if (isStopped(ctx.run.id)) throw new RunAbort('stopped');
       // Visible progress so the UI doesn't look stalled while catching up.
       await emit(ctx.run.id, 'log', `Catching up: ${step.intent}`, { stepSequence: step.sequence, catchUp: true });
+      const span = tracer?.start(step, 'catch-up');
       const outcome = await performStep(ctx, step);
+      span?.end(outcome);
       if (outcome.page?.url) ctx.lastUrl = outcome.page.url;
       if (!outcome.ok) {
         throw new Error(`Couldn't catch up at "${step.intent}": ${outcome.error ?? 'the step did not work'}`);
       }
     }
-  }
-
-  async function requestApproval(ctx: ExecCtx, step: SkillStep, index: number) {
-    const page = await withRecovery(ctx, index, () => browser.readPage(ctx.sessionId!));
-    ctx.lastUrl = page.url;
-    const payload: Approval['payload'] = { ...extract(page), pageUrl: page.url };
-    const title = step.config.approval?.title ?? `${step.intent}?`;
-    const description = step.config.approval?.description ?? `The next step is irreversible: ${lowerFirst(step.intent)}.`;
-    if (stopRequested.has(ctx.run.id)) return;
-    const approval = await repo.createApproval({
-      runId: ctx.run.id,
-      stepSequence: step.sequence,
-      title,
-      description,
-      payload,
-    });
-    ctx.run = await repo.updateRun(ctx.run.id, { state: 'waiting_approval' });
-    await emit(ctx.run.id, 'approval.requested', `Waiting for your approval: ${title}`, {
-      stepSequence: step.sequence,
-      url: page.url,
-      usedLocator: null,
-      approvalId: approval.id,
-    });
   }
 
   function resolveUrl(skill: SkillDetail, source: string): string {
@@ -406,8 +368,135 @@ export function createRunEngine(deps: RunEngineDeps): RunEngineWithIdle {
     return `${skill.title} done. Verified on the website.`;
   }
 
-  async function verifyAndFinish(ctx: ExecCtx) {
-    const runId = ctx.run.id;
+  // ───────────── Workflow step bodies ─────────────
+
+  /** Step "prepare": load the run + skill, mark it running, open the browser (catching up if resuming). */
+  async function prepare(runId: string): Promise<FlowState> {
+    const blank: FlowState = { runId, sessionId: null, lastUrl: null, recovered: false, status: 'continue', pendingStep: null };
+    const existing = await repo.getRun(runId);
+    if (!existing) throw new Error(`Run ${runId} not found`);
+    if (TERMINAL_STATES.includes(existing.state) || isStopped(runId)) return halted(blank);
+    const ctx = await loadCtx(blank);
+    // 'resumed' = a run approved before it had a workflow snapshot (legacy run): continue it.
+    if (ctx.run.state !== 'resumed') {
+      ctx.run = await repo.updateRun(runId, { state: 'running' });
+      await emit(runId, 'run.started', `Starting: ${ctx.skill.title}`, {});
+    }
+    if (!ctx.sessionId) {
+      await openBrowser(ctx);
+      const startIndex = startIndexOf(ctx);
+      if (startIndex > 0) await catchUp(ctx, startIndex);
+    }
+    return flow(ctx, 'continue');
+  }
+
+  /**
+   * Step "execute-steps": performs browser steps from `currentStep` until the end, or until an
+   * irreversible step that has not been approved yet (→ status 'awaiting_approval').
+   */
+  async function executeSteps(state: FlowState, tracer?: StepTracer): Promise<FlowState> {
+    if (state.status !== 'continue') return state;
+    const runId = state.runId;
+    if (isStopped(runId)) return halted(state);
+    const ctx = await loadCtx(state);
+    if (TERMINAL_STATES.includes(ctx.run.state)) return halted(state);
+    const { steps } = ctx;
+
+    for (let i = startIndexOf(ctx); i < steps.length; i++) {
+      const step = steps[i];
+      if (isStopped(runId)) return halted(flow(ctx, 'halted'));
+      ctx.run = await repo.updateRun(runId, { currentStep: step.sequence });
+
+      if (step.requiresApproval) {
+        const latest = await repo.getLatestApproval(runId);
+        const approved = latest && latest.stepSequence === step.sequence && latest.status === 'approved';
+        if (!approved) return flow(ctx, 'awaiting_approval', step.sequence); // browser stays open
+      }
+
+      const urlBefore = ctx.lastUrl;
+      await emit(runId, 'step.started', step.intent, { stepSequence: step.sequence, url: urlBefore, usedLocator: null });
+
+      const span = tracer?.start(step, 'step');
+      let outcome: ActionOutcome;
+      try {
+        outcome = await withRecovery(ctx, i, () => performStep(ctx, step), tracer);
+      } catch (err) {
+        span?.fail(err);
+        throw err;
+      }
+      span?.end(outcome);
+      if (isStopped(runId)) return halted(flow(ctx, 'halted'));
+      if (outcome.page?.url) ctx.lastUrl = outcome.page.url;
+
+      if (!outcome.ok) {
+        const reason = outcome.error ?? 'the step did not work';
+        const message = `Couldn't ${lowerFirst(step.intent)}: ${reason}`;
+        await emit(runId, 'step.failed', message, {
+          stepSequence: step.sequence,
+          url: ctx.lastUrl,
+          usedLocator: outcome.usedLocator,
+        });
+        await failRun(ctx.run, message);
+        return flow(ctx, 'halted');
+      }
+
+      if (outcome.usedLocator && outcome.usedLocator !== step.locatorHint) {
+        await repo.updateStepLocator(step.id, outcome.usedLocator);
+        step.locatorHint = outcome.usedLocator;
+      }
+      await emit(runId, 'step.succeeded', `${step.intent} — done`, {
+        stepSequence: step.sequence,
+        url: ctx.lastUrl,
+        usedLocator: outcome.usedLocator,
+      });
+    }
+
+    if (isStopped(runId)) return halted(flow(ctx, 'halted'));
+    return flow(ctx, 'steps_done');
+  }
+
+  /**
+   * Step "approval" (first pass): reads the page, creates the approval row, sets waiting_approval and
+   * emits approval.requested. Returns null if a Stop raced in. The workflow then calls suspend().
+   */
+  async function requestApproval(state: FlowState): Promise<{ state: FlowState; request: ApprovalRequest | null }> {
+    const ctx = await loadCtx(state);
+    const index = ctx.steps.findIndex((s) => s.sequence === state.pendingStep);
+    const step = ctx.steps[index];
+    if (!step) throw new Error(`Approval step ${state.pendingStep} not found`);
+    const page = await withRecovery(ctx, index, () => browser.readPage(ctx.sessionId!));
+    ctx.lastUrl = page.url;
+    const payload: Approval['payload'] = { ...extract(page), pageUrl: page.url };
+    const title = step.config.approval?.title ?? `${step.intent}?`;
+    const description = step.config.approval?.description ?? `The next step is irreversible: ${lowerFirst(step.intent)}.`;
+    if (isStopped(ctx.run.id)) return { state: flow(ctx, 'halted'), request: null };
+    const approval = await repo.createApproval({
+      runId: ctx.run.id,
+      stepSequence: step.sequence,
+      title,
+      description,
+      payload,
+    });
+    ctx.run = await repo.updateRun(ctx.run.id, { state: 'waiting_approval' });
+    await emit(ctx.run.id, 'approval.requested', `Waiting for your approval: ${title}`, {
+      stepSequence: step.sequence,
+      url: page.url,
+      usedLocator: null,
+      approvalId: approval.id,
+    });
+    return {
+      state: flow(ctx, 'awaiting_approval', step.sequence),
+      request: { approvalId: approval.id, stepSequence: step.sequence, title, payload },
+    };
+  }
+
+  /** Step "verify": state verifying, screenshot proof, verifyPage → succeeded or failed. Closes the browser. */
+  async function verifyAndFinish(state: FlowState): Promise<FlowState> {
+    if (state.status !== 'steps_done') return state;
+    const runId = state.runId;
+    if (isStopped(runId)) return halted(state);
+    const ctx = await loadCtx(state);
+    if (TERMINAL_STATES.includes(ctx.run.state)) return halted(state);
     ctx.run = await repo.updateRun(runId, { state: 'verifying' });
     await emit(runId, 'verify.started', 'Checking the website to confirm it worked', { url: ctx.lastUrl });
 
@@ -450,7 +539,8 @@ export function createRunEngine(deps: RunEngineDeps): RunEngineWithIdle {
       valuePerYear: ctx.skill.valuePerYear,
     };
 
-    if (stopRequested.has(runId)) return;
+    if (isStopped(runId)) return halted(flow(ctx, 'halted'));
+    ctx.lastUrl = page.url;
 
     if (vr.passed) {
       const summary = successSummary(ctx.skill, merchant);
@@ -464,17 +554,88 @@ export function createRunEngine(deps: RunEngineDeps): RunEngineWithIdle {
       await repo.recordSkillOutcome(ctx.skill.id, true);
       if (ctx.run.triggerId) await repo.setTriggerState(ctx.run.triggerId, 'done');
       await closeQuietly(ctx.sessionId);
-    } else {
-      const summary = `Couldn't confirm on the website that "${ctx.skill.title}" worked.`;
-      const result: RunResult = { success: false, summary, ...base };
-      const detail = vr.failedRules.map((r) => `${r.type.replace('_', ' ')} "${r.value}"`).join(', ');
-      await emit(runId, 'verify.failed', `Verification failed${detail ? `: ${detail}` : ''}`, {
-        url: page.url,
-        failedRules: vr.failedRules,
-      });
-      ctx.run = { ...ctx.run, browserSessionId: ctx.sessionId };
-      await failRun(ctx.run, summary, result);
+      skills.delete(runId);
+      return flow(ctx, 'verified');
     }
+    const summary = `Couldn't confirm on the website that "${ctx.skill.title}" worked.`;
+    const result: RunResult = { success: false, summary, ...base };
+    const detail = vr.failedRules.map((r) => `${r.type.replace('_', ' ')} "${r.value}"`).join(', ');
+    await emit(runId, 'verify.failed', `Verification failed${detail ? `: ${detail}` : ''}`, {
+      url: page.url,
+      failedRules: vr.failedRules,
+    });
+    ctx.run = { ...ctx.run, browserSessionId: ctx.sessionId };
+    await failRun(ctx.run, summary, result);
+    return flow(ctx, 'halted');
+  }
+
+  return {
+    repo,
+    active,
+    stopRequested,
+    iso,
+    emit,
+    closeQuietly,
+    handleUnexpected,
+    isStopped,
+    isAbort: (err: unknown) => err instanceof RunAbort,
+    halted,
+    prepare,
+    executeSteps,
+    requestApproval,
+    verifyAndFinish,
+    forget: (runId: string) => skills.delete(runId),
+  };
+}
+
+// ═════════════════════════ RunEngine facade over the Mastra workflow ═════════════════════════
+
+export interface MastraRunEngineOptions {
+  core: RunCore;
+  /** The registered `choreRun` workflow (must belong to a Mastra instance with storage). */
+  workflow: () => ChoreRunWorkflow;
+  /** Flushes buffered trace spans (observability), best effort. */
+  flushTraces?: () => Promise<void>;
+}
+
+export function createMastraRunEngine({ core, workflow, flushTraces }: MastraRunEngineOptions): RunEngineWithIdle {
+  const { repo, active, stopRequested } = core;
+  const tasks = new Map<string, Promise<void>>();
+
+  const tracing = (runId: string, extra: Record<string, unknown> = {}) => {
+    const traceId = traceIdForRun(runId);
+    return { ...(traceId ? { traceId } : {}), metadata: { runId, ...extra } };
+  };
+
+  function track(runId: string, task: Promise<void>) {
+    const prev = tasks.get(runId) ?? Promise.resolve();
+    const chained = Promise.all([prev, task]).then(() => undefined);
+    tasks.set(runId, chained);
+  }
+
+  /** Runs workflow work in the background. Caller must already hold the `active` slot for runId. */
+  function launch(runId: string, work: () => Promise<{ status: string; error?: unknown }>) {
+    const task = (async () => {
+      try {
+        const result = await work();
+        // Errors are normally turned into a failed run inside the step; this is the safety net.
+        if (result.status === 'failed') await core.handleUnexpected(runId, result.error ?? new Error('workflow failed'));
+      } catch (err) {
+        await core.handleUnexpected(runId, err);
+      } finally {
+        // Safety net: if a stop raced with a browser reopen, close whatever session the run holds now.
+        if (stopRequested.has(runId)) {
+          const latest = await repo.getRun(runId).catch(() => null);
+          await core.closeQuietly(latest?.browserSessionId);
+        }
+        active.delete(runId);
+        stopRequested.delete(runId);
+        await flushTraces?.().catch(() => undefined);
+      }
+    })().catch(() => {
+      /* never let a rejection escape */
+    });
+    track(runId, task);
   }
 
   return {
@@ -483,7 +644,13 @@ export function createRunEngine(deps: RunEngineDeps): RunEngineWithIdle {
       if (run.triggerId) await repo.setTriggerState(run.triggerId, 'running');
       if (!active.has(run.id)) {
         active.add(run.id);
-        launch(run.id);
+        launch(run.id, async () => {
+          const wfRun = await workflow().createRun({ runId: run.id, resourceId: run.userId });
+          return wfRun.start({
+            inputData: { runId: run.id },
+            tracingOptions: tracing(run.id, { skillId: run.skillId, userId: run.userId }),
+          });
+        });
       }
       return { runId: run.id };
     },
@@ -491,6 +658,7 @@ export function createRunEngine(deps: RunEngineDeps): RunEngineWithIdle {
     async approve(runId) {
       if (active.has(runId)) return; // already executing (double click / concurrent approve)
       active.add(runId);
+      let userId: string;
       try {
         const run = await repo.getRun(runId);
         if (!run) throw new Error(`Run ${runId} not found`);
@@ -498,42 +666,96 @@ export function createRunEngine(deps: RunEngineDeps): RunEngineWithIdle {
         const approval = await repo.getLatestApproval(runId);
         if (!approval || approval.status !== 'pending') throw new Error('There is no pending approval for this run');
         await repo.decideApproval(approval.id, 'approved');
-        await emit(runId, 'approval.granted', `You approved: ${approval.title}`, {
+        await core.emit(runId, 'approval.granted', `You approved: ${approval.title}`, {
           stepSequence: approval.stepSequence,
           approvalId: approval.id,
         });
         await repo.updateRun(runId, { state: 'resumed' });
+        userId = run.userId;
       } catch (err) {
         active.delete(runId);
         throw err;
       }
-      launch(runId);
+      launch(runId, async () => {
+        const wf = workflow();
+        // Works in a fresh process: the suspended snapshot is loaded from storage by runId.
+        const snapshot = await wf.getWorkflowRunById(runId);
+        const wfRun = await wf.createRun({ runId, resourceId: userId });
+        if (snapshot?.status === 'suspended') {
+          return wfRun.resume({ resumeData: { approved: true }, tracingOptions: tracing(runId, { resumedBy: 'approve' }) });
+        }
+        // No suspended snapshot (run predates the workflow): start one; it continues from currentStep.
+        return wfRun.start({ inputData: { runId }, tracingOptions: tracing(runId, { resumedBy: 'approve' }) });
+      });
     },
 
     async stop(runId) {
       const run = await repo.getRun(runId);
       if (!run) throw new Error(`Run ${runId} not found`);
       if (TERMINAL_STATES.includes(run.state)) return;
-      stopRequested.add(runId);
+      const inFlight = active.has(runId);
+      if (inFlight) stopRequested.add(runId);
       const approval = await repo.getLatestApproval(runId);
       if (approval && approval.status === 'pending') {
         await repo.decideApproval(approval.id, 'denied');
-        await emit(runId, 'approval.denied', `You declined: ${approval.title}`, {
+        await core.emit(runId, 'approval.denied', `You declined: ${approval.title}`, {
           stepSequence: approval.stepSequence,
           approvalId: approval.id,
         });
       }
-      await emit(runId, 'run.stopped', 'Stopped. Nothing else will happen.', { stepSequence: run.currentStep });
-      await repo.updateRun(runId, { state: 'stopped', completedAt: iso() });
+      await core.emit(runId, 'run.stopped', 'Stopped. Nothing else will happen.', { stepSequence: run.currentStep });
+      await repo.updateRun(runId, { state: 'stopped', completedAt: core.iso() });
       if (run.triggerId) await repo.setTriggerState(run.triggerId, 'pending');
+      core.forget(runId);
       // Close the paid browser in the background so the Stop button answers instantly.
-      void closeQuietly(run.browserSessionId);
-      // If no background work holds the run, clear the flag now; otherwise the loop clears it.
-      if (!active.has(runId)) stopRequested.delete(runId);
+      void core.closeQuietly(run.browserSessionId);
+      if (inFlight) return; // the running steps see stopRequested and halt; launch() cleans up.
+
+      // Not executing here: settle the Mastra run so its snapshot doesn't stay suspended forever.
+      const settle = (async () => {
+        try {
+          const wf = workflow();
+          const snapshot = await wf.getWorkflowRunById(runId);
+          if (!snapshot) return;
+          const wfRun = await wf.createRun({ runId, resourceId: run.userId });
+          if (snapshot.status === 'suspended') {
+            await wfRun.resume({ resumeData: { approved: false }, tracingOptions: tracing(runId, { resumedBy: 'stop' }) });
+          } else if (snapshot.status === 'running' || snapshot.status === 'pending' || snapshot.status === 'waiting') {
+            await wfRun.cancel();
+          }
+        } catch {
+          /* the run is already stopped in our tables; the snapshot is only bookkeeping */
+        } finally {
+          await flushTraces?.().catch(() => undefined);
+        }
+      })();
+      track(runId, settle);
     },
 
     whenIdle(runId) {
       return tasks.get(runId) ?? Promise.resolve();
     },
   };
+}
+
+/**
+ * Self-contained engine (own Mastra instance) — used by tests and scripts. Pass a shared `storage`
+ * to simulate a server restart (a second engine resumes snapshots the first one persisted).
+ */
+export function createRunEngine(
+  deps: RunEngineDeps & { storage?: MastraCompositeStore; observability?: ObservabilityEntrypoint },
+): RunEngineWithIdle {
+  const core = createRunCore(deps);
+  const choreRun = createChoreRunWorkflow(() => core);
+  const mastra = new Mastra({
+    storage: deps.storage ?? new InMemoryStore(),
+    workflows: { choreRun },
+    logger: false,
+    ...(deps.observability ? { observability: deps.observability } : {}),
+  });
+  return createMastraRunEngine({
+    core,
+    workflow: () => mastra.getWorkflow('choreRun'),
+    flushTraces: deps.observability ? () => mastra.observability.flush() : undefined,
+  });
 }
