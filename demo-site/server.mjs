@@ -3,6 +3,7 @@
 import http from 'node:http';
 import { fileURLToPath } from 'node:url';
 import { resolve } from 'node:path';
+import { qrSvg, qrPath } from './qr.mjs';
 
 // ---------------------------------------------------------------------------
 // State
@@ -11,14 +12,20 @@ import { resolve } from 'node:path';
 const USER = { firstName: 'Ali', name: 'Ali Amjad', email: 'ali@example.com', initials: 'AA', memberSince: 'Mar 2024' };
 const PLAN = { name: 'Lumen+ Premium', price: '$19/month', amount: '$19.00', quality: '4K Ultra HD + HDR', screens: 4 };
 
-/** @type {{ status: 'active' | 'canceled', canceledAt: Date | null, endsOn: Date | null, layout: string }} */
-const state = { status: 'active', canceledAt: null, endsOn: null, layout: 'v1' };
+/** @type {{ status: 'active' | 'canceled', canceledAt: Date | null, endsOn: Date | null, layout: string, returns: any[] }} */
+const state = { status: 'active', canceledAt: null, endsOn: null, layout: 'v1', returns: [] };
 
-function resetState() {
+function resetMembership() {
   state.status = 'active';
   state.canceledAt = null;
   state.endsOn = null;
-  state.layout = 'v1';
+}
+
+/** Full demo reset: membership active, no returns. Keeps the current layout unless one is given. */
+function resetState(layout) {
+  resetMembership();
+  state.returns = [];
+  if (layout && LAYOUTS[layout]) state.layout = layout;
 }
 
 // ---------------------------------------------------------------------------
@@ -55,6 +62,7 @@ const LAYOUTS = {
       { label: 'Home', href: '/' },
       { label: 'Originals', href: '/#originals' },
       { label: 'Live', href: '/#live' },
+      { label: 'Lumen Store', href: '/store' },
     ],
     headerAccount: 'Account',
     sidebar: [
@@ -65,12 +73,24 @@ const LAYOUTS = {
     ],
     // Which sidebar entry is highlighted on the membership flow pages.
     membershipSection: 'billing',
+    paths: {
+      billing: '/account/billing',
+      membership: '/account/membership',
+      cancel: '/account/membership/cancel',
+      confirm: '/account/membership/cancel/confirm',
+    },
+    // v1: a quiet "Cancel membership" link in the Billing details card. v2: inside a "More options" disclosure.
+    cancelInDisclosure: false,
     labels: {
       billingTitle: 'Billing',
+      billingSub: 'Your membership, payment method and invoices.',
       manageMembership: 'Manage membership',
       membershipTitle: 'Membership',
+      paymentDetailsTitle: 'Billing details',
       changePlan: 'Change plan',
       cancelMembership: 'Cancel membership',
+      retentionPageTitle: 'Before you go',
+      retentionTitle: 'Before you go…',
       acceptOffer: 'Accept offer',
       declineOffer: 'No thanks, continue to cancel',
       confirmTitle: 'Confirm cancellation',
@@ -79,6 +99,45 @@ const LAYOUTS = {
       resumeMembership: 'Resume membership',
       updatePayment: 'Update payment method',
     },
+  },
+};
+
+// v2 — the "redesign" that breaks the stored v1 path (self-heal demo). Every v1 link/button name and
+// matchText on the cancel path is gone; the new path is discoverable from visible text.
+LAYOUTS.v2 = {
+  ...LAYOUTS.v1,
+  id: 'v2',
+  sidebar: [
+    { key: 'overview', label: 'Overview', href: '/account' },
+    { key: 'profile', label: 'Profile', href: '/account/profile' },
+    { key: 'billing', label: 'Plan & payments', href: '/account/plan' },
+    { key: 'devices', label: 'Devices', href: '/account/devices' },
+  ],
+  paths: {
+    billing: '/account/plan',
+    membership: '/account/membership',
+    cancel: '/account/membership/end',
+    confirm: '/account/membership/end/confirm',
+  },
+  cancelInDisclosure: true,
+  labels: {
+    billingTitle: 'Plan & payments',
+    billingSub: 'Your plan, payment method and receipts.',
+    manageMembership: 'Manage plan',
+    membershipTitle: 'Your plan',
+    paymentDetailsTitle: 'Payment details',
+    changePlan: 'Change plan',
+    moreOptions: 'More options',
+    cancelMembership: 'End membership',
+    retentionPageTitle: 'Stay with Lumen+',
+    retentionTitle: 'Wait — a better deal for you',
+    acceptOffer: 'Accept offer',
+    declineOffer: 'Continue to end membership',
+    confirmTitle: 'Review and end membership',
+    confirmButton: 'End my membership',
+    keepMembership: 'Keep my membership',
+    resumeMembership: 'Resume membership',
+    updatePayment: 'Update payment method',
   },
 };
 
@@ -205,13 +264,94 @@ footer{border-top:1px solid var(--line);background:#fff}
 .foot .copy{margin-left:auto}
 `;
 
-function page({ title, layout, body }) {
+// Extra CSS only emitted on v2 and store pages, so v1 pages keep their exact markup.
+const EXTRA_CSS = `
+.more{margin-top:4px;border-top:1px solid var(--line);padding-top:12px}
+.more summary{cursor:pointer;font-size:14px;font-weight:600;color:#3b3e52;list-style:none;display:inline-flex;align-items:center;gap:8px;padding:6px 10px;margin-left:-10px;border-radius:8px}
+.more summary::-webkit-details-marker{display:none}
+.more summary::after{content:"";width:7px;height:7px;border-right:2px solid currentColor;border-bottom:2px solid currentColor;transform:rotate(45deg) translateY(-2px);transition:transform .15s}
+.more[open] summary::after{transform:rotate(-135deg) translateY(-2px)}
+.more summary:hover{background:#f1f2f7}
+.more-body{padding:10px 0 2px;font-size:13.5px;color:var(--muted);display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap}
+.storebar{background:#fff;border-bottom:1px solid var(--line)}
+.storebar-inner{max-width:1180px;margin:0 auto;padding:0 28px;height:54px;display:flex;align-items:center;gap:26px;font-size:14px}
+.storebar .sb-brand{display:flex;align-items:center;gap:9px;font-weight:800;font-size:16px;letter-spacing:-.01em;text-decoration:none}
+.storebar .sb-brand i{font-style:normal;font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:#5b3fd6;background:#efeaff;padding:3px 8px;border-radius:999px}
+.storebar nav{display:flex;gap:4px}
+.storebar nav a{text-decoration:none;color:#3b3e52;font-weight:550;padding:7px 12px;border-radius:8px}
+.storebar nav a:hover{background:#f1f2f7}
+.storebar nav a[aria-current=page]{background:#f1f2f7;color:var(--ink)}
+.storebar .sb-right{margin-left:auto;color:var(--muted);font-size:13px}
+.wrap{max-width:1180px;margin:0 auto;padding:30px 28px 64px}
+.wrap.narrow{max-width:860px}
+.order{padding:0;overflow:hidden}
+.order-top{display:flex;gap:28px;flex-wrap:wrap;padding:14px 24px;background:#f8f9fc;border-bottom:1px solid var(--line);font-size:12.5px;color:var(--muted)}
+.order-top b{display:block;color:var(--ink);font-size:13.5px;font-weight:600}
+.order-top .ono{margin-left:auto;text-align:right}
+.order-body{display:flex;gap:20px;align-items:center;padding:20px 24px}
+.order-body .info{flex:1;min-width:0}
+.order-body .title{font-weight:700;font-size:16px;text-decoration:none;color:var(--ink)}
+.order-body a.title:hover{text-decoration:underline}
+.order-body p{margin:3px 0 0;font-size:14px;color:var(--muted)}
+.pill{display:inline-flex;align-items:center;gap:6px;font-size:13px;font-weight:600;margin-top:8px}
+.pill.ok{color:var(--ok)}
+.pill.no{color:#8a5a00}
+.pill.na{color:var(--faint)}
+.thumb{width:84px;height:84px;border-radius:14px;flex:none;display:grid;place-items:center}
+.thumb.lg{width:120px;height:120px;border-radius:18px}
+.thumb svg{width:60%;height:60%}
+.t-aura{background:linear-gradient(145deg,#ece8ff,#ffe3ef)}
+.t-gift{background:linear-gradient(145deg,#6d4dff,#ff4d8d);color:#fff}
+.t-stick{background:linear-gradient(145deg,#e6f4f1,#dfe7ff)}
+.products{display:grid;grid-template-columns:repeat(4,1fr);gap:18px}
+.product{background:#fff;border:1px solid var(--line);border-radius:16px;padding:16px}
+.product .thumb{width:100%;height:150px;border-radius:12px;margin-bottom:12px}
+.product b{display:block;font-size:14.5px}
+.product span{font-size:14px;color:var(--muted)}
+.store-hero{background:radial-gradient(ellipse at 15% 0,#3b2a85 0,transparent 55%),radial-gradient(ellipse at 85% 40%,#6a1d4d 0,transparent 50%),#0c0c16;color:#fff;border-radius:20px;padding:40px 44px;margin-bottom:28px;display:flex;align-items:center;gap:30px}
+.store-hero h1{font-size:36px;margin:10px 0 8px}
+.store-hero p{color:#c4c6dc;margin:0 0 20px;max-width:520px}
+.steps{display:flex;gap:8px;margin:0 0 22px;padding:0;list-style:none;font-size:13px;color:var(--faint);flex-wrap:wrap}
+.steps li{display:flex;align-items:center;gap:8px}
+.steps li+li::before{content:"";width:22px;height:1px;background:#cfd2de}
+.steps .n{width:22px;height:22px;border-radius:50%;display:grid;place-items:center;font-weight:700;font-size:12px;background:#eceef3;color:#6b6e80}
+.steps .cur{color:var(--ink);font-weight:600}
+.steps .cur .n{background:var(--ink);color:#fff}
+.steps .done .n{background:#e3f6ee;color:var(--ok)}
+fieldset{border:0;padding:0;margin:0 0 22px}
+legend{font-weight:700;font-size:15px;margin-bottom:10px;padding:0}
+.choice{display:flex;gap:12px;align-items:flex-start;padding:14px 16px;border:1px solid #d9dbe5;border-radius:12px;margin-bottom:10px;cursor:pointer;background:#fff}
+.choice:hover{border-color:#b9bccd}
+.choice:has(input:checked){border-color:var(--brand);box-shadow:0 0 0 3px rgba(109,77,255,.14);background:#fbfaff}
+.choice input{margin:3px 0 0;accent-color:var(--brand);width:17px;height:17px;flex:none}
+.choice .c-main{flex:1}
+.choice label{font-weight:650;font-size:14.5px;cursor:pointer;display:block}
+.choice .hint{font-size:13px;color:var(--muted);margin-top:2px}
+.choice .c-side{font-size:13px;color:var(--muted);white-space:nowrap}
+.field{margin-bottom:20px}
+.field label{display:block;font-weight:700;font-size:15px;margin-bottom:8px}
+.field .hint{font-size:13px;color:var(--muted);margin:-4px 0 8px}
+select,textarea{font:inherit;font-size:14.5px;width:100%;max-width:420px;padding:10px 12px;border:1px solid #cfd2de;border-radius:10px;background:#fff;color:var(--ink)}
+textarea{max-width:100%;min-height:76px;resize:vertical}
+select:focus,textarea:focus{outline:2px solid rgba(109,77,255,.35);border-color:var(--brand)}
+.notice.err{background:#fdecea;color:#8a1c12}
+.notice.ok{background:#e3f6ee;color:#0b5e41}
+.split{display:grid;grid-template-columns:1fr 300px;gap:24px;align-items:start}
+.aside-card{background:#fff;border:1px solid var(--line);border-radius:16px;padding:20px}
+.aside-card h2{font-size:15px;margin-bottom:10px}
+.aside-card .row{padding:9px 0;font-size:13.5px}
+.qrbox{display:flex;gap:26px;align-items:center;flex-wrap:wrap}
+.qrbox .qr{padding:10px;border:1px solid var(--line);border-radius:14px;background:#fff;line-height:0}
+.rma{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-weight:700;font-size:18px;letter-spacing:.04em}
+`;
+
+function page({ title, layout, body, extra = layout.id !== 'v1' }) {
   const nav = layout.siteNav.map((l) => `<a href="${l.href}">${esc(l.label)}</a>`).join('');
   return `<!doctype html>
 <html lang="en"><head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>${esc(title)} · Lumen+</title>
-<style>${CSS}</style>
+<style>${CSS}${extra ? EXTRA_CSS : ''}</style>
 </head><body>
 <header class="topbar"><div class="topbar-inner">
   <a class="brand" href="/" aria-label="Lumen+ home">${LOGO_MARK}<span>Lumen<em>+</em></span></a>
@@ -249,6 +389,18 @@ function accountShell({ title, layout, active, body }) {
   <main>${body}</main>
 </div>`,
   });
+}
+
+/** Entry point to the cancel flow on the membership page — a quiet link (v1) or a disclosure (v2). */
+function cancelEntry(layout) {
+  const L = layout.labels;
+  if (!layout.cancelInDisclosure)
+    return `<div style="font-size:13.5px;color:var(--muted)">Not enjoying Lumen+? <a class="link-quiet" href="${layout.paths.cancel}">${esc(L.cancelMembership)}</a></div>`;
+  return `<details class="more">
+    <summary>${esc(L.moreOptions)}</summary>
+    <div class="more-body"><span>Taking a break? You can end your membership at any time and keep access until your renewal date.</span>
+      <a class="link-quiet" href="${layout.paths.cancel}">${esc(L.cancelMembership)}</a></div>
+  </details>`;
 }
 
 const statusBadge = () =>
@@ -368,11 +520,11 @@ function billingPage(layout) {
     active: 'billing',
     body: `<div class="crumbs">Account / ${esc(L.billingTitle)}</div>
 <h1>${esc(L.billingTitle)}</h1>
-<p class="sub">Your membership, payment method and invoices.</p>
+<p class="sub">${esc(L.billingSub)}</p>
 <section class="card" aria-labelledby="m-h">
   <div class="card-head"><div><h2 id="m-h">Membership</h2><p>${membershipRow}</p></div>${statusBadge()}</div>
   ${state.status === 'canceled' ? `<p style="margin:0 0 4px;font-size:14px;color:var(--muted)">Access ends on ${date}</p>` : ''}
-  <div class="actions" style="margin-top:8px"><a class="btn primary" href="/account/membership">${esc(L.manageMembership)}</a></div>
+  <div class="actions" style="margin-top:8px"><a class="btn primary" href="${layout.paths.membership}">${esc(L.manageMembership)}</a></div>
 </section>
 <section class="card" aria-labelledby="pm-h">
   <div class="card-head"><div><h2 id="pm-h">Payment method</h2><p>Charged automatically on your billing date.</p></div></div>
@@ -415,12 +567,12 @@ function membershipPage(layout, url) {
       <p style="margin:2px 0 0;color:var(--muted);font-size:14.5px">${PLAN.price} · Next renewal: ${date}</p></div></div>
   <ul class="perks">${perks}</ul>
   <div class="actions">
-    <form method="get" action="/account/membership" style="margin:0"><input type="hidden" name="notice" value="plan"><button class="btn primary" type="submit">${esc(L.changePlan)}</button></form>
+    <form method="get" action="${layout.paths.membership}" style="margin:0"><input type="hidden" name="notice" value="plan"><button class="btn primary" type="submit">${esc(L.changePlan)}</button></form>
   </div>
 </section>
 <section class="card" aria-labelledby="pay-h">
-  <div class="card-head"><div><h2 id="pay-h">Billing details</h2><p>Visa •••• 4242 is charged ${PLAN.amount} on ${date}.</p></div></div>
-  <div style="font-size:13.5px;color:var(--muted)">Not enjoying Lumen+? <a class="link-quiet" href="/account/membership/cancel">${esc(L.cancelMembership)}</a></div>
+  <div class="card-head"><div><h2 id="pay-h">${esc(L.paymentDetailsTitle)}</h2><p>Visa •••• 4242 is charged ${PLAN.amount} on ${date}.</p></div></div>
+  ${cancelEntry(layout)}
 </section>`
       : `<section class="card" aria-labelledby="plan-h">
   <div class="plan"><div class="plan-art off" aria-hidden="true">L+</div>
@@ -453,11 +605,11 @@ function retentionPage(layout, url) {
     .map((p) => `<li>${p}</li>`)
     .join('');
   return accountShell({
-    title: 'Before you go',
+    title: L.retentionPageTitle,
     layout,
     active: layout.membershipSection,
     body: `<div class="crumbs">Account / ${esc(L.membershipTitle)} / ${esc(L.cancelMembership)}</div>
-<h1>Before you go…</h1>
+<h1>${esc(L.retentionTitle)}</h1>
 <p class="sub">We'd hate to see you leave, ${USER.firstName}. Here's something to make staying easier.</p>
 ${accepted ? `<div class="notice info" role="status">${ICONS.info}<span>Thanks! This offer can't be applied in this demo, so no changes were made to your plan.</span></div>` : ''}
 <section class="card offer" aria-labelledby="offer-h">
@@ -467,8 +619,8 @@ ${accepted ? `<div class="notice info" role="status">${ICONS.info}<span>Thanks! 
       <p style="margin:4px 0 0">Stay on ${PLAN.name} for $9.50/month for your next 3 months, then ${PLAN.price}. Cancel anytime.</p></div>
   </div>
   <div class="actions">
-    <form method="get" action="/account/membership/cancel" style="margin:0"><input type="hidden" name="offer" value="accepted"><button class="btn brand" type="submit">${esc(L.acceptOffer)}</button></form>
-    <a class="btn secondary" href="/account/membership/cancel/confirm">${esc(L.declineOffer)}</a>
+    <form method="get" action="${layout.paths.cancel}" style="margin:0"><input type="hidden" name="offer" value="accepted"><button class="btn brand" type="submit">${esc(L.acceptOffer)}</button></form>
+    <a class="btn secondary" href="${layout.paths.confirm}">${esc(L.declineOffer)}</a>
   </div>
 </section>
 <section class="card" aria-labelledby="lose-h">
@@ -494,7 +646,7 @@ function confirmPage(layout) {
   <div class="row"><span class="k">Payment method</span><span>Visa •••• 4242</span></div>
   <div class="row"><span class="k">Access</span><span>You'll keep access until ${date}</span></div>
   <div class="notice warn" style="margin:14px 0 0">${ICONS.alert}<span>After ${date} you won't be charged again, and your profiles, watchlist and downloads will be removed after 10 months.</span></div>
-  <form method="post" action="/account/membership/cancel/confirm" class="actions">
+  <form method="post" action="${layout.paths.confirm}" class="actions">
     <button class="btn danger" type="submit">${esc(L.confirmButton)}</button>
     <a class="link-quiet" href="/account/membership?notice=kept">${esc(L.keepMembership)}</a>
   </form>
@@ -511,6 +663,476 @@ function notFoundPage(layout) {
 }
 
 // ---------------------------------------------------------------------------
+// Lumen Store — gear orders and the "Return an online item" flow (S6 X3)
+// ---------------------------------------------------------------------------
+
+const SHIP_TO = { name: USER.name, line1: '418 Alder St, Apt 5', city: 'Seattle, WA 98101' };
+
+const ORDERS = [
+  {
+    id: 'LS-20931', placed: 'Sep 25, 2026', status: 'Delivered Sep 28, 2026', total: '$129.00',
+    items: [{
+      id: 'aura', name: 'Lumen Aura Wireless Headphones', variant: 'Midnight · Over-ear · Active noise cancelling',
+      price: '$129.00', thumb: 'aura', delivered: 'Delivered Sep 28, 2026',
+      returnable: true, eligibility: 'Eligible for return until Oct 28, 2026',
+    }],
+  },
+  {
+    id: 'LS-20877', placed: 'Sep 10, 2026', status: 'Delivered by email Sep 10, 2026', total: '$50.00',
+    items: [{
+      id: 'gift', name: 'Lumen+ Digital Gift Card ($50)', variant: 'Sent to ali@example.com',
+      price: '$50.00', thumb: 'gift', delivered: 'Delivered by email Sep 10, 2026',
+      returnable: false, eligibility: 'Not eligible for return (digital gift card)',
+    }],
+  },
+  {
+    id: 'LS-20412', placed: 'Jul 27, 2026', status: 'Delivered Jul 30, 2026', total: '$49.00',
+    items: [{
+      id: 'stick', name: 'Lumen Stream Stick 4K', variant: 'HDR10+ · Voice remote',
+      price: '$49.00', thumb: 'stick', delivered: 'Delivered Jul 30, 2026',
+      returnable: false, eligibility: 'Return window closed on Aug 29, 2026',
+    }],
+  },
+];
+
+const RETURN_REASONS = [
+  ['no_longer_needed', 'No longer needed'],
+  ['bought_by_mistake', 'Bought by mistake'],
+  ['better_price', 'Better price available'],
+  ['defective', "Item defective or doesn't work"],
+  ['damaged', 'Arrived damaged'],
+  ['wrong_item', 'Wrong item was sent'],
+];
+const REFUND_OPTIONS = [
+  ['original', 'Original payment method (Visa •••• 4242)', '3–5 business days after the package is scanned.'],
+  ['store_credit', 'Store credit', 'Added to your Lumen Store balance as soon as the carrier scans your package.'],
+];
+const DROPOFF_OPTIONS = [
+  ['ups_store', 'UPS Store', 'Drop it off at any UPS Store location. No box or tape needed.'],
+  ['pickup', 'Schedule pickup', `A UPS driver collects the package from ${SHIP_TO.line1}.`],
+];
+const LABEL_OPTIONS = [
+  ['qr', 'QR code', 'Show a QR code on your phone and the UPS Store prints the label for you.'],
+  ['print', 'Print label', 'Download a shipping label, print it and tape it to the package.'],
+];
+const optLabel = (opts, v) => (opts.find(([k]) => k === v) || [])[1];
+
+const THUMBS = {
+  aura: `<svg viewBox="0 0 64 64" fill="none" aria-hidden="true"><path d="M14 38V32a18 18 0 0 1 36 0v6" stroke="#5b3fd6" stroke-width="4" stroke-linecap="round"/><rect x="9" y="35" width="11" height="18" rx="5" fill="#6d4dff"/><rect x="44" y="35" width="11" height="18" rx="5" fill="#ff4d8d"/></svg>`,
+  gift: `<svg viewBox="0 0 64 64" fill="none" aria-hidden="true"><rect x="8" y="18" width="48" height="30" rx="5" fill="rgba(255,255,255,.18)" stroke="#fff" stroke-width="2.5"/><path d="M26 26.5v13l10.5-6.5z" fill="#fff"/></svg>`,
+  stick: `<svg viewBox="0 0 64 64" fill="none" aria-hidden="true"><rect x="12" y="26" width="34" height="13" rx="4" fill="#0f766e"/><rect x="46" y="29" width="7" height="7" rx="1.5" fill="#1e3a8a"/><circle cx="20" cy="32.5" r="2" fill="#a7f3d0"/></svg>`,
+  stand: `<svg viewBox="0 0 64 64" fill="none" aria-hidden="true"><rect x="20" y="10" width="24" height="36" rx="4" fill="#1e293b"/><path d="M14 54h36l-6-10H20z" fill="#94a3b8"/></svg>`,
+};
+const thumb = (k, cls = '') => `<div class="thumb ${cls} t-${k === 'stand' ? 'stick' : k}">${THUMBS[k]}</div>`;
+
+const findOrder = (id) => ORDERS.find((o) => o.id === id);
+const returnFor = (orderId, itemId) => state.returns.find((r) => r.orderId === orderId && r.itemId === itemId);
+const findReturn = (rma) => state.returns.find((r) => r.rma === rma);
+
+function daysFromNow(n) {
+  const d = new Date();
+  d.setHours(12, 0, 0, 0);
+  d.setDate(d.getDate() + n);
+  return d;
+}
+function nextWeekday() {
+  const d = daysFromNow(1);
+  while (d.getDay() === 0 || d.getDay() === 6) d.setDate(d.getDate() + 1);
+  return d;
+}
+
+function storeShell({ title, section, body, narrow = false }) {
+  const nav = [['shop', 'Shop', '/store'], ['orders', 'Your orders', '/store/orders']]
+    .map(([k, label, href]) => `<a href="${href}"${k === section ? ' aria-current="page"' : ''}>${label}</a>`)
+    .join('');
+  return page({
+    title: `${title} · Lumen Store`,
+    layout: LAYOUTS[state.layout] || LAYOUTS.v1,
+    extra: true,
+    body: `<div class="storebar"><div class="storebar-inner">
+  <span class="sb-brand">Lumen Store <i>Gear</i></span>
+  <nav aria-label="Store">${nav}</nav>
+  <span class="sb-right">Free returns within 30 days · Ships to ${esc(SHIP_TO.city)}</span>
+</div></div>
+<div class="wrap${narrow ? ' narrow' : ''}">${body}</div>`,
+  });
+}
+
+function storeHomePage() {
+  const products = [
+    ['aura', 'Lumen Aura Wireless Headphones', '$129.00'],
+    ['stick', 'Lumen Stream Stick 4K', '$49.00'],
+    ['gift', 'Lumen+ Digital Gift Card', 'From $25.00'],
+    ['stand', 'Lumen Charging Dock', '$39.00'],
+  ]
+    .map(([k, n, p]) => `<div class="product">${thumb(k)}<b>${n}</b><span>${p}</span></div>`)
+    .join('');
+  return storeShell({
+    title: 'Shop',
+    section: 'shop',
+    body: `<section class="store-hero"><div style="flex:1">
+  <span class="badge premium">Members save 10%</span>
+  <h1>Gear made for Lumen+</h1>
+  <p>Headphones, streaming sticks and accessories tuned for 4K HDR and spatial audio. Free shipping and free 30-day returns.</p>
+  <a class="btn brand" href="/store/orders">See order history</a>
+</div><div class="thumb lg t-aura" style="width:170px;height:170px">${THUMBS.aura}</div></section>
+<h2 style="margin-bottom:14px">Popular right now</h2>
+<div class="products">${products}</div>`,
+  });
+}
+
+function itemStatus(order, item) {
+  const ret = returnFor(order.id, item.id);
+  if (ret) return `<span class="pill ok">${ICONS.check} Return started · ${ret.rma}</span>`;
+  return item.returnable
+    ? `<span class="pill ok">${ICONS.check} Free return available</span>`
+    : `<span class="pill na">${ICONS.info} Not returnable</span>`;
+}
+
+function ordersPage() {
+  const cards = ORDERS.map((o) => {
+    const items = o.items
+      .map((it) => `<div class="order-body">${thumb(it.thumb)}
+      <div class="info"><a class="title" href="/store/orders/${o.id}">${esc(it.name)}</a><span class="meta" style="color:var(--muted);font-size:14px"> · ${it.price} · ${it.delivered} · ${esc(it.eligibility)}</span>
+        <p>${esc(it.variant)}</p>${itemStatus(o, it)}</div>
+      <a class="btn secondary" href="/store/orders/${o.id}">View order #${o.id}</a></div>`)
+      .join('');
+    return `<section class="card order" aria-label="Order ${o.id}">
+  <div class="order-top"><span>Order placed<b>${o.placed}</b></span><span>Total<b>${o.total}</b></span><span>Ship to<b>${esc(SHIP_TO.name)}</b></span><span class="ono">Order #<b>${o.id}</b></span></div>
+  ${items}
+</section>`;
+  }).join('');
+  return storeShell({
+    title: 'Your orders',
+    section: 'orders',
+    body: `<div class="crumbs">Lumen Store / Your orders</div>
+<h1>Your orders</h1>
+<p class="sub">${ORDERS.length} orders placed in the last 3 months.</p>
+${cards}`,
+  });
+}
+
+function orderDetailPage(order) {
+  const it = order.items[0];
+  const ret = returnFor(order.id, it.id);
+  let action;
+  if (ret) action = `<a class="btn primary" href="/store/returns/${ret.rma}">View return ${ret.rma}</a>`;
+  else if (it.returnable) action = `<a class="btn primary" href="/store/orders/${order.id}/return">Return or replace items</a>`;
+  else action = `<span class="pill na" style="margin:0">${ICONS.info} ${esc(it.eligibility)}</span>`;
+  return storeShell({
+    title: `Order #${order.id}`,
+    section: 'orders',
+    body: `<div class="crumbs">Lumen Store / Your orders / Order #${order.id}</div>
+<h1>Order details</h1>
+<p class="sub">Order #${order.id} · Placed ${order.placed}</p>
+<div class="split">
+<div>
+  <section class="card" aria-labelledby="st-h">
+    <div class="card-head"><div><h2 id="st-h">${esc(order.status)}</h2><p>${ret ? `Return started · ${ret.rma}` : esc(it.eligibility)}</p></div>${ret ? '<span class="badge muted">Return started</span>' : '<span class="badge ok">Delivered</span>'}</div>
+    <div class="order-body" style="padding:6px 0 0">${thumb(it.thumb, 'lg')}
+      <div class="info"><b style="font-size:17px">${esc(it.name)}</b><p>${esc(it.variant)}</p><p>Qty 1 · <b style="color:var(--ink)">${it.price}</b></p></div></div>
+    <div class="actions">${action}</div>
+  </section>
+</div>
+<aside class="aside-card" aria-labelledby="sum-h">
+  <h2 id="sum-h">Order summary</h2>
+  <div class="row" style="border-top:0"><span class="k">Item subtotal</span><span>${it.price}</span></div>
+  <div class="row"><span class="k">Shipping</span><span>Free</span></div>
+  <div class="row"><span class="k">Total</span><span><b>${order.total}</b></span></div>
+  <div class="row"><span class="k">Paid with</span><span>Visa •••• 4242</span></div>
+  <div class="row"><span class="k">Ship to</span><span style="text-align:right">${esc(SHIP_TO.name)}<br>${esc(SHIP_TO.line1)}<br>${esc(SHIP_TO.city)}</span></div>
+</aside>
+</div>`,
+  });
+}
+
+function stepsBar(cur) {
+  return `<ol class="steps" aria-label="Return progress">${['Choose items', 'Refund & drop-off', 'Review']
+    .map((s, i) => `<li class="${i + 1 === cur ? 'cur' : i + 1 < cur ? 'done' : ''}"${i + 1 === cur ? ' aria-current="step"' : ''}><span class="n">${i + 1 < cur ? '✓' : i + 1}</span>${s}</li>`)
+    .join('')}</ol>`;
+}
+const errBox = (msg) => (msg ? `<div class="notice err" role="alert">${ICONS.alert}<span>${esc(msg)}</span></div>` : '');
+const hidden = (fields) => Object.entries(fields).map(([k, v]) => `<input type="hidden" name="${k}" value="${esc(v ?? '')}">`).join('');
+const radioGroup = (name, legend, opts, selected, side = '') =>
+  `<fieldset><legend>${legend}</legend>${opts
+    .map(([v, label, hint]) => `<div class="choice"><input type="radio" id="${name}-${v}" name="${name}" value="${v}" aria-describedby="${name}-${v}-hint" required${selected === v ? ' checked' : ''}>
+      <div class="c-main"><label for="${name}-${v}">${esc(label)}</label><div class="hint" id="${name}-${v}-hint">${esc(hint)}</div></div>${side ? `<span class="c-side">${side}</span>` : ''}</div>`)
+    .join('')}</fieldset>`;
+
+function itemAside(order, it) {
+  return `<aside class="aside-card" aria-labelledby="ret-item-h">
+  <h2 id="ret-item-h">Returning</h2>
+  <div style="display:flex;gap:12px;align-items:center">${thumb(it.thumb)}<div><b style="font-size:14px">${esc(it.name)}</b><div style="font-size:13px;color:var(--muted)">Order #${order.id} · ${it.price}</div></div></div>
+  <div class="row" style="margin-top:10px"><span class="k">Return window</span><span>Until Oct 28, 2026</span></div>
+  <div class="row"><span class="k">Return shipping</span><span>Free</span></div>
+</aside>`;
+}
+
+/** Step 1: choose the item and a reason. */
+function returnStartPage(order, values = {}, error = '') {
+  const items = order.items
+    .filter((it) => it.returnable)
+    .map((it) => `<div class="choice"><input type="checkbox" id="item-${it.id}" name="item" value="${it.id}"${values.item === it.id ? ' checked' : ''}>
+      <div class="c-main"><label for="item-${it.id}">${esc(it.name)}</label><div class="hint">${esc(it.variant)} · ${it.delivered}</div></div><span class="c-side">${it.price}</span></div>`)
+    .join('');
+  const reasons = RETURN_REASONS.map(([v, l]) => `<option value="${v}"${values.reason === v ? ' selected' : ''}>${esc(l)}</option>`).join('');
+  return storeShell({
+    title: 'Return or replace items',
+    section: 'orders',
+    body: `<div class="crumbs">Lumen Store / Your orders / Order #${order.id} / Return</div>
+<h1>Return or replace items</h1>
+<p class="sub">Choose what you're sending back from order #${order.id}.</p>
+${stepsBar(1)}
+<div class="split"><form method="post" action="/store/orders/${order.id}/return" class="card">
+  ${errBox(error)}
+  <fieldset><legend>Which item are you returning?</legend>${items}</fieldset>
+  <div class="field"><label for="reason">Reason for return</label>
+    <select id="reason" name="reason" required><option value="">Choose a reason</option>${reasons}</select></div>
+  <div class="field"><label for="comments">Comments (optional)</label>
+    <textarea id="comments" name="comments" placeholder="Anything we should know?">${esc(values.comments || '')}</textarea></div>
+  <div class="actions"><button class="btn primary" type="submit">Continue</button><a class="link-quiet" href="/store/orders/${order.id}">Back to order details</a></div>
+</form>${itemAside(order, order.items[0])}</div>`,
+  });
+}
+
+/** Step 2: refund destination, drop-off method and label format. */
+function returnOptionsPage(order, v, error = '') {
+  const it = order.items.find((x) => x.id === v.item);
+  return storeShell({
+    title: 'Refund and drop-off',
+    section: 'orders',
+    body: `<div class="crumbs">Lumen Store / Your orders / Order #${order.id} / Return</div>
+<h1>Refund and drop-off</h1>
+<p class="sub">Choose where your refund goes and how you'll send the item back.</p>
+${stepsBar(2)}
+<div class="split"><form method="post" action="/store/orders/${order.id}/return/options" class="card">
+  ${errBox(error)}
+  ${hidden({ item: v.item, reason: v.reason, comments: v.comments })}
+  ${radioGroup('refund', 'Refund destination', REFUND_OPTIONS, v.refund, it.price)}
+  ${radioGroup('dropoff', 'Return method', DROPOFF_OPTIONS, v.dropoff, 'Free')}
+  ${radioGroup('label', 'Label format', LABEL_OPTIONS, v.label)}
+  <div class="actions"><button class="btn primary" type="submit">Continue to review</button><a class="link-quiet" href="/store/orders/${order.id}/return">Back to item selection</a></div>
+</form>${itemAside(order, it)}</div>`,
+  });
+}
+
+/** Step 3: review summary + the irreversible "Submit return" button. */
+function returnReviewPage(order, v) {
+  const it = order.items.find((x) => x.id === v.item);
+  const dropBy = fmt(daysFromNow(14));
+  return storeShell({
+    title: 'Review your return',
+    section: 'orders',
+    body: `<div class="crumbs">Lumen Store / Your orders / Order #${order.id} / Return</div>
+<h1>Review your return</h1>
+<p class="sub">Check the details below, then submit your return.</p>
+${stepsBar(3)}
+<div class="split"><section class="card" aria-labelledby="rv-h">
+  <h2 id="rv-h">Return summary</h2>
+  <div class="row" style="border-top:0"><span class="k">Item</span><span>${esc(it.name)}</span></div>
+  <div class="row"><span class="k">Order</span><span>#${order.id}</span></div>
+  <div class="row"><span class="k">Reason</span><span>${esc(optLabel(RETURN_REASONS, v.reason))}</span></div>
+  <div class="row"><span class="k">Refund to</span><span>${esc(optLabel(REFUND_OPTIONS, v.refund))}</span></div>
+  <div class="row"><span class="k">Refund amount</span><span><b>${it.price}</b></span></div>
+  <div class="row"><span class="k">Return method</span><span>${esc(optLabel(DROPOFF_OPTIONS, v.dropoff))}</span></div>
+  <div class="row"><span class="k">Label format</span><span>${esc(optLabel(LABEL_OPTIONS, v.label))}</span></div>
+  <div class="row"><span class="k">Drop off by</span><span>${dropBy}</span></div>
+  <div class="notice warn" style="margin:14px 0 0">${ICONS.alert}<span>Once you submit, the return can't be edited. Your refund is issued after the carrier scans the package.</span></div>
+  <form method="post" action="/store/orders/${order.id}/return/submit" class="actions">
+    ${hidden({ item: v.item, reason: v.reason, comments: v.comments, refund: v.refund, dropoff: v.dropoff, label: v.label })}
+    <button class="btn brand" type="submit">Submit return</button>
+    <a class="link-quiet" href="/store/orders/${order.id}/return/options?${new URLSearchParams({ item: v.item, reason: v.reason, comments: v.comments || '', refund: v.refund, dropoff: v.dropoff, label: v.label })}">Edit refund and drop-off</a>
+  </form>
+</section>${itemAside(order, it)}</div>`,
+  });
+}
+
+const qrPayload = (r) => `LUMEN-RETURN:${r.rma}:${r.orderId}:${r.dropOff === 'pickup' ? 'PICKUP' : 'UPS-STORE'}`;
+
+function returnConfirmationPage(r) {
+  const order = findOrder(r.orderId);
+  const it = order.items.find((x) => x.id === r.itemId);
+  const how =
+    r.dropOff === 'pickup'
+      ? `A UPS driver will pick up the package on ${r.pickupOn} between 9 AM and 7 PM.`
+      : r.labelFormat === 'qr'
+        ? 'Show this QR code at any UPS Store. They’ll print the label and pack the item for you.'
+        : 'Print the label, tape it to the package and drop it off at any UPS Store.';
+  return storeShell({
+    title: 'Return started',
+    section: 'orders',
+    body: `<div class="crumbs">Lumen Store / Your orders / Order #${order.id} / Return</div>
+<div class="notice ok" role="status">${ICONS.check}<span>Return started. We emailed the details to ${esc(USER.email)}.</span></div>
+<h1>Return started</h1>
+<p class="sub">${esc(it.name)} · Order #${order.id}</p>
+<div class="split"><section class="card" aria-labelledby="lbl-h">
+  <div class="qrbox">
+    <div class="qr">${qrSvg(qrPayload(r), { size: 196, title: `Return QR code for ${r.rma}`, standalone: false })}</div>
+    <div style="flex:1;min-width:240px">
+      <h2 id="lbl-h">${r.labelFormat === 'qr' ? 'Your return QR code' : 'Your return label'}</h2>
+      <p style="margin:2px 0 12px;color:var(--muted);font-size:14.5px">${esc(how)}</p>
+      <div style="font-size:13px;color:var(--faint);text-transform:uppercase;letter-spacing:.05em;font-weight:600">RMA number</div>
+      <div class="rma">${r.rma}</div>
+      <div class="actions" style="margin-top:14px"><a class="btn primary" href="${r.labelUrl}" download="lumen-return-${r.rma}.svg">Download label</a></div>
+    </div>
+  </div>
+  <div class="row" style="margin-top:18px;border-top:1px solid var(--line)"><span class="k">Drop off by</span><span><b>${r.dropOffBy}</b></span></div>
+  <div class="row"><span class="k">Return method</span><span>${esc(r.dropOffLabel)}</span></div>
+  <div class="row"><span class="k">Refund to</span><span>${esc(r.refundLabel)}</span></div>
+  <div class="row"><span class="k">Refund amount</span><span>${r.refundAmount}</span></div>
+  <div class="row"><span class="k">Reason</span><span>${esc(r.reason)}</span></div>
+</section>
+<aside class="aside-card" aria-labelledby="next-h">
+  <h2 id="next-h">What happens next</h2>
+  <div class="row" style="border-top:0"><span>1. ${r.dropOff === 'pickup' ? `UPS picks up on ${r.pickupOn}` : `Drop off at a UPS Store by ${r.dropOffBy}`}</span></div>
+  <div class="row"><span>2. We email you when the package is scanned</span></div>
+  <div class="row"><span>3. Refund of ${r.refundAmount} to ${r.refund === 'original' ? 'Visa •••• 4242' : 'store credit'}</span></div>
+  <div class="actions"><a class="link-quiet" href="/store/orders">View all orders</a></div>
+</aside></div>`,
+  });
+}
+
+/** 4×6 shipping label as a standalone SVG. */
+function labelSvg(r) {
+  const { d, modules } = qrPath(qrPayload(r));
+  const scale = 150 / modules;
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="4in" height="6in" viewBox="0 0 400 600" font-family="Helvetica, Arial, sans-serif">
+<title>Lumen Store return label ${r.rma}</title>
+<rect width="400" height="600" fill="#fff"/><rect x="8" y="8" width="384" height="584" fill="none" stroke="#111" stroke-width="3"/>
+<text x="24" y="44" font-size="22" font-weight="700">Lumen Store Returns</text>
+<text x="24" y="66" font-size="12">PREPAID RETURN · UPS GROUND · ${r.rma}</text>
+<line x1="8" y1="82" x2="392" y2="82" stroke="#111" stroke-width="2"/>
+<text x="24" y="104" font-size="10" font-weight="700">FROM</text>
+<text x="24" y="120" font-size="13">${esc(SHIP_TO.name)}</text><text x="24" y="136" font-size="13">${esc(SHIP_TO.line1)}</text><text x="24" y="152" font-size="13">${esc(SHIP_TO.city)}</text>
+<text x="24" y="186" font-size="10" font-weight="700">SHIP TO</text>
+<text x="24" y="208" font-size="18" font-weight="700">LUMEN STORE RETURNS CENTER</text>
+<text x="24" y="228" font-size="16">1200 Harbor Way, Dock 4</text><text x="24" y="248" font-size="16">Reno, NV 89502</text>
+<line x1="8" y1="268" x2="392" y2="268" stroke="#111" stroke-width="2"/>
+<g transform="translate(125 285) scale(${scale})"><path d="${d}" fill="#111"/></g>
+<text x="200" y="460" font-size="12" text-anchor="middle">Scan at drop-off</text>
+<line x1="8" y1="476" x2="392" y2="476" stroke="#111" stroke-width="2"/>
+<text x="24" y="500" font-size="12">Order #${r.orderId} · ${esc(r.item)}</text>
+<text x="24" y="520" font-size="12">Refund: ${esc(r.refundLabel)} · ${r.refundAmount}</text>
+<text x="24" y="540" font-size="12">${r.dropOff === 'pickup' ? `UPS pickup on ${r.pickupOn}` : `Drop off at a UPS Store by ${r.dropOffBy}`}</text>
+<text x="24" y="572" font-size="10" fill="#555">Lumen Store (fictional demo). Not a real shipping label.</text>
+</svg>`;
+}
+
+function newRma() {
+  for (;;) {
+    const rma = `RMA-${Math.floor(10000000 + Math.random() * 90000000)}`;
+    if (!findReturn(rma)) return rma;
+  }
+}
+
+/** Validates the return form values for a given step; returns an error message or ''. */
+function validateReturn(order, v, step) {
+  const it = order.items.find((x) => x.id === v.item && x.returnable);
+  if (!it) return 'Choose the item you want to return.';
+  if (!RETURN_REASONS.some(([k]) => k === v.reason)) return 'Choose a reason for the return.';
+  if (step < 2) return '';
+  if (!REFUND_OPTIONS.some(([k]) => k === v.refund)) return 'Choose where your refund should go.';
+  if (!DROPOFF_OPTIONS.some(([k]) => k === v.dropoff)) return 'Choose how you will send the item back.';
+  if (!LABEL_OPTIONS.some(([k]) => k === v.label)) return 'Choose a label format.';
+  return '';
+}
+
+const returnValues = (params) => {
+  const o = {};
+  for (const k of ['item', 'reason', 'comments', 'refund', 'dropoff', 'label']) o[k] = params.get(k) || '';
+  return o;
+};
+
+function createReturn(order, v) {
+  const it = order.items.find((x) => x.id === v.item);
+  const existing = returnFor(order.id, it.id);
+  if (existing) return existing;
+  const rma = newRma();
+  const r = {
+    rma,
+    status: 'started',
+    orderId: order.id,
+    itemId: it.id,
+    item: it.name,
+    reasonCode: v.reason,
+    reason: optLabel(RETURN_REASONS, v.reason),
+    comments: v.comments || '',
+    refund: v.refund,
+    refundLabel: optLabel(REFUND_OPTIONS, v.refund),
+    refundAmount: it.price,
+    dropOff: v.dropoff,
+    dropOffLabel: optLabel(DROPOFF_OPTIONS, v.dropoff),
+    labelFormat: v.label,
+    labelFormatLabel: optLabel(LABEL_OPTIONS, v.label),
+    dropOffBy: fmt(daysFromNow(14)),
+    pickupOn: v.dropoff === 'pickup' ? fmt(nextWeekday()) : null,
+    labelUrl: `/store/returns/${rma}/label.svg`,
+    createdAt: new Date().toISOString(),
+  };
+  state.returns.push(r);
+  return r;
+}
+
+/** Handles all /store routes. Returns true if handled. */
+function handleStore(req, res, method, path, url, params) {
+  if (!path.startsWith('/store')) return false;
+  if (method === 'GET' || method === 'HEAD') {
+    if (path === '/store') return html(res, storeHomePage()), true;
+    if (path === '/store/orders') return html(res, ordersPage()), true;
+    let m = path.match(/^\/store\/returns\/(RMA-\d+)(\/label\.svg)?$/);
+    if (m) {
+      const r = findReturn(m[1]);
+      if (!r) return false;
+      if (m[2])
+        return send(res, 200, labelSvg(r), {
+          'content-type': 'image/svg+xml; charset=utf-8',
+          'content-disposition': `${url.searchParams.get('inline') ? 'inline' : 'attachment'}; filename="lumen-return-${r.rma}.svg"`,
+        }), true;
+      return html(res, returnConfirmationPage(r)), true;
+    }
+    m = path.match(/^\/store\/orders\/(LS-\d+)(\/return(?:\/(options|review))?)?$/);
+    const order = m && findOrder(m[1]);
+    if (!order) return false;
+    if (!m[2]) return html(res, orderDetailPage(order)), true;
+    const it = order.items[0];
+    if (!it.returnable) return redirect(res, `/store/orders/${order.id}`), true;
+    const existing = returnFor(order.id, it.id);
+    if (existing) return redirect(res, `/store/returns/${existing.rma}`), true;
+    const v = returnValues(url.searchParams);
+    if (!m[3]) return html(res, returnStartPage(order, v)), true;
+    if (validateReturn(order, v, 1)) return redirect(res, `/store/orders/${order.id}/return`), true;
+    if (m[3] === 'options') return html(res, returnOptionsPage(order, v)), true;
+    if (validateReturn(order, v, 2)) return redirect(res, `/store/orders/${order.id}/return/options?${new URLSearchParams(v)}`), true;
+    return html(res, returnReviewPage(order, v)), true;
+  }
+  if (method === 'POST') {
+    const m = path.match(/^\/store\/orders\/(LS-\d+)\/return(?:\/(options|submit))?$/);
+    const order = m && findOrder(m[1]);
+    if (!order) return false;
+    const v = returnValues(params);
+    if (!m[2]) {
+      const err = validateReturn(order, v, 1);
+      if (err) return html(res, returnStartPage(order, v, err), 422), true;
+      return redirect(res, `/store/orders/${order.id}/return/options?${new URLSearchParams({ item: v.item, reason: v.reason, comments: v.comments })}`), true;
+    }
+    if (m[2] === 'options') {
+      const err = validateReturn(order, v, 2);
+      if (err) {
+        if (validateReturn(order, v, 1)) return redirect(res, `/store/orders/${order.id}/return`), true;
+        return html(res, returnOptionsPage(order, v, err), 422), true;
+      }
+      return redirect(res, `/store/orders/${order.id}/return/review?${new URLSearchParams(v)}`), true;
+    }
+    // submit — the irreversible step
+    if (validateReturn(order, v, 2)) return redirect(res, `/store/orders/${order.id}/return`), true;
+    const r = createReturn(order, v);
+    return redirect(res, `/store/returns/${r.rma}`), true;
+  }
+  return false;
+}
+
+// ---------------------------------------------------------------------------
 // Server
 // ---------------------------------------------------------------------------
 
@@ -524,20 +1146,53 @@ const redirect = (res, location) => send(res, 303, '', { location });
 
 function apiState() {
   const date = fmt(renewalDate());
-  return {
+  const s = {
     status: state.status,
     renewsOn: state.status === 'active' ? date : null,
     endsOn: state.status === 'canceled' ? date : null,
     layout: state.layout,
   };
+  // `returns` is only present once a return exists, so the v1 state shape stays exactly as before.
+  if (state.returns.length) s.returns = state.returns;
+  return s;
 }
 
-function drain(req) {
+/** Reads a request body (max 64 KB) and parses JSON or url-encoded forms into URLSearchParams. */
+function readParams(req) {
   return new Promise((resolve) => {
-    req.on('data', () => {});
-    req.on('end', resolve);
-    req.on('error', resolve);
+    let body = '';
+    req.setEncoding('utf8');
+    req.on('data', (c) => {
+      body += c;
+      if (body.length > 65536) req.destroy();
+    });
+    req.on('end', () => {
+      const type = String(req.headers['content-type'] || '');
+      if (type.includes('json') || /^\s*\{/.test(body)) {
+        try {
+          const obj = JSON.parse(body || '{}');
+          return resolve(new URLSearchParams(Object.entries(obj).map(([k, v]) => [k, String(v)])));
+        } catch {
+          return resolve(new URLSearchParams());
+        }
+      }
+      resolve(new URLSearchParams(body));
+    });
+    req.on('error', () => resolve(new URLSearchParams()));
   });
+}
+
+const tokenOk = (req) => {
+  const token = process.env.DEMO_RESET_TOKEN;
+  return !token || req.headers['x-reset-token'] === token;
+};
+
+function cancelMembership() {
+  if (state.status !== 'canceled') {
+    state.status = 'canceled';
+    state.canceledAt = new Date();
+    state.endsOn = tomorrow();
+  }
 }
 
 export function createServer() {
@@ -549,30 +1204,35 @@ export function createServer() {
 
     try {
       if (method === 'POST') {
-        await drain(req);
-        if (path === '/account/membership/cancel/confirm') {
-          if (state.status !== 'canceled') {
-            state.status = 'canceled';
-            state.canceledAt = new Date();
-            state.endsOn = tomorrow();
-          }
+        const params = await readParams(req);
+        // Both layouts' confirm endpoints cancel, whichever layout is active.
+        if (path === LAYOUTS.v1.paths.confirm || path === LAYOUTS.v2.paths.confirm) {
+          cancelMembership();
           return redirect(res, '/account/membership?canceled=1');
         }
         if (path === '/account/membership/resume') {
-          resetState();
+          resetMembership();
           return redirect(res, '/account/membership?notice=resumed');
         }
-        if (path === '/api/reset') {
-          const token = process.env.DEMO_RESET_TOKEN;
-          if (token && req.headers['x-reset-token'] !== token) return json(res, { error: 'invalid reset token' }, 401);
-          resetState();
+        if (path === '/api/reset' || path === '/api/layout') {
+          if (!tokenOk(req)) return json(res, { error: 'invalid reset token' }, 401);
+          const requested = params.get('layout');
+          if (requested && !LAYOUTS[requested]) return json(res, { error: `unknown layout "${requested}" (use v1 or v2)` }, 400);
+          if (path === '/api/layout') {
+            if (!requested) return json(res, { error: 'body must include layout: "v1" | "v2"' }, 400);
+            state.layout = requested;
+          } else {
+            resetState(requested);
+          }
           return json(res, { ok: true, ...apiState() });
         }
+        if (handleStore(req, res, method, path, url, params)) return;
         return json(res, { error: 'not found' }, 404);
       }
 
       if (method !== 'GET' && method !== 'HEAD') return json(res, { error: 'method not allowed' }, 405);
 
+      const P = layout.paths;
       switch (path) {
         case '/': return html(res, homePage(layout));
         case '/healthz': return json(res, { ok: true });
@@ -580,16 +1240,17 @@ export function createServer() {
         case '/account': return html(res, overviewPage(layout));
         case '/account/profile': return html(res, profilePage(layout));
         case '/account/devices': return html(res, devicesPage(layout));
-        case '/account/billing': return html(res, billingPage(layout));
-        case '/account/membership': return html(res, membershipPage(layout, url));
-        case '/account/membership/cancel':
-          if (state.status === 'canceled') return redirect(res, '/account/membership');
+        case P.billing: return html(res, billingPage(layout));
+        case P.membership: return html(res, membershipPage(layout, url));
+        case P.cancel:
+          if (state.status === 'canceled') return redirect(res, P.membership);
           return html(res, retentionPage(layout, url));
-        case '/account/membership/cancel/confirm':
-          if (state.status === 'canceled') return redirect(res, '/account/membership');
+        case P.confirm:
+          if (state.status === 'canceled') return redirect(res, P.membership);
           return html(res, confirmPage(layout));
-        default: return html(res, notFoundPage(layout), 404);
       }
+      if (handleStore(req, res, method, path, url, url.searchParams)) return;
+      return html(res, notFoundPage(layout), 404);
     } catch (err) {
       console.error(err);
       return json(res, { error: 'internal error' }, 500);
