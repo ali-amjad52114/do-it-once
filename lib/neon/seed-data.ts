@@ -145,6 +145,6 @@ export const DEMO_TRIGGER = {
   userId: DEMO_USER_ID,
   source: 'seed' as const,
   subject: 'Your Lumen+ membership renews tomorrow',
-  payload: { merchant: 'Lumen+', amount: '$19/month', cadence: 'monthly', dueLabel: 'Renews tomorrow' },
+  payload: { title: 'Membership renewal', merchant: 'Lumen+', amount: '$19/month', cadence: 'monthly', dueLabel: 'Renews tomorrow' },
   matchedSkillId: CANCEL_SKILL_ID,
 };
