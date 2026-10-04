@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Teach your agent</title>
+<link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <header class="head">
+    <div class="eyebrow"><span class="mark" aria-hidden="true"></span>Do It Once</div>
+    <h1>Teach your agent</h1>
+    <p class="lede" id="lede">Do the chore yourself once. We'll watch the clicks, not the keystrokes.</p>
+  </header>
+
+  <!-- idle -->
+  <section id="view-idle" class="view" hidden>
+    <ol class="steps">
+      <li>Open the website where the chore starts.</li>
+      <li>Press <b>Start recording</b> and do the chore as usual.</li>
+      <li>Press <b>Stop</b>, then send it to Do It Once.</li>
+    </ol>
+    <button id="start" class="btn primary" type="button"><span class="rec-dot" aria-hidden="true"></span>Start recording</button>
+  </section>
+
+  <!-- recording / stopped share the action list -->
+  <section id="view-session" class="view" hidden>
+    <div class="status">
+      <span id="status-chip" class="chip"></span>
+      <span class="count"><b id="count">0</b> <span id="count-word">actions</span></span>
+    </div>
+    <ul id="actions" class="actions" aria-live="polite"></ul>
+    <p id="empty" class="empty" hidden>Nothing yet. Click around the page to begin.</p>
+
+    <div id="controls-recording" class="row">
+      <button id="stop" class="btn primary" type="button"><span class="stop-sq" aria-hidden="true"></span>Stop</button>
+    </div>
+
+    <div id="controls-stopped" class="stack" hidden>
+      <button id="send" class="btn primary" type="button">Send to Do It Once</button>
+      <div class="row">
+        <button id="download" class="btn quiet" type="button">Download JSON</button>
+        <button id="again" class="btn quiet" type="button">Record again</button>
+      </div>
+    </div>
+  </section>
+
+  <p id="msg" class="msg" role="status" hidden></p>
+
+  <details class="settings">
+    <summary>Settings</summary>
+    <label for="app-url">Do It Once app URL</label>
+    <div class="row">
+      <input id="app-url" type="url" spellcheck="false" placeholder="http://localhost:3000">
+      <button id="save-url" class="btn quiet small" type="button">Save</button>
+    </div>
+    <p class="fine">Recordings are only ever sent to this address, and only when you press Send.</p>
+  </details>
+
+  <script src="lib.js"></script>
+  <script src="popup.js"></script>
+</body>
+</html>
