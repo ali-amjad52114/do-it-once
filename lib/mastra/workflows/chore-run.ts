@@ -151,6 +151,39 @@ export function createChoreRunWorkflow(getCore: () => RunCore) {
     },
   });
 
+  const postActions = createStep({
+    id: 'post-actions',
+    description: 'After a verified success: save files to the Fly Sprite workspace, API actions via Executor',
+    inputSchema: flowStateSchema,
+    outputSchema: flowStateSchema,
+    execute: async ({ inputData, tracingContext }) => {
+      if (inputData.status !== 'verified') return inputData;
+      const core = getCore();
+      try {
+        const run = await core.repo.getRun(inputData.runId);
+        if (run?.state !== 'succeeded' || !run.result?.finalUrl) return inputData;
+        const skill = await core.repo.getSkill(run.skillId);
+        if (!skill?.postActions?.length) return inputData;
+        const { runPostActions, defaultPostActionDeps } = await import('@/lib/actions');
+        const parent = tracingContext?.currentSpan;
+        await runPostActions(
+          { runId: run.id, skill, finalUrl: run.result.finalUrl },
+          await defaultPostActionDeps(core.repo),
+          parent
+            ? (action) => {
+                const span = parent.createChildSpan({ type: SpanType.GENERIC, name: `post-action: ${action.type}`, input: action });
+                return { end: (o) => (o.ok ? span.end({ output: o }) : span.error({ error: new Error(o.message), endSpan: true })) };
+              }
+            : undefined,
+        );
+      } catch (err) {
+        // Never fail a verified run because a follow-up broke.
+        await core.emit(inputData.runId, 'log', `Follow-ups skipped: ${err instanceof Error ? err.message : String(err)}`, {}).catch(() => undefined);
+      }
+      return inputData;
+    },
+  });
+
   const complete = createStep({
     id: 'complete',
     description: 'Report the final run state',
@@ -173,6 +206,7 @@ export function createChoreRunWorkflow(getCore: () => RunCore) {
     .then(prepare)
     .dountil(segment, async ({ inputData }) => inputData.status !== 'continue')
     .then(verify)
+    .then(postActions)
     .then(complete)
     .commit();
 }

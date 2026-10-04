@@ -37,6 +37,7 @@ export function SuccessHero({ result, word }: { result: RunResult; word: string 
             <span className="font-semibold">{money(result.valuePerYear)}/year</span> no longer recurring
           </p>
         )}
+        {word === 'Return started' && <p className="mt-5 text-xl text-success-ink sm:text-2xl"><span className="font-semibold">{result.evidenceText.join(' ').match(/\$[\d,]+\.\d{2}/)?.[0] ?? 'Your'} refund</span> on its way</p>}
         <p className="mx-auto mt-4 max-w-lg text-[15px] leading-relaxed text-ink-soft">{result.summary}</p>
       </div>
     </section>

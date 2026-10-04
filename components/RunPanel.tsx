@@ -7,6 +7,7 @@ import { ActivityList, buildActivity } from './ActivityList';
 import { ApprovalCard } from './ApprovalCard';
 import { LiveView } from './LiveView';
 import { SuccessHero } from './SuccessHero';
+import { SavedByAgent } from './workspace/SavedByAgent';
 import { Button, Card, SectionLabel } from './ui';
 
 const PILL: Record<RunState, { label: string; tone: string }> = {
@@ -22,7 +23,7 @@ const PILL: Record<RunState, { label: string; tone: string }> = {
 
 function successWord(icon: string | undefined, title: string | undefined) {
   if (icon === 'subscription' || /cancel/i.test(title ?? '')) return 'Canceled';
-  if (icon === 'return') return 'Returned';
+  if (icon === 'return') return 'Return started';
   if (icon === 'haircut') return 'Booked';
   if (icon === 'registration') return 'Renewed';
   return 'Done';
@@ -100,6 +101,7 @@ export function RunPanel({
     return (
       <div className="flex flex-col gap-6">
         <SuccessHero result={run.result} word={successWord(skill?.icon, skill?.title)} />
+        {skill?.postActions?.length ? <SavedByAgent runId={runId} /> : null}
         <div className="grid gap-6 lg:grid-cols-[minmax(0,5fr)_minmax(0,7fr)]">
           <Card className="p-6 sm:p-7">
             <SectionLabel>What your agent did</SectionLabel>
