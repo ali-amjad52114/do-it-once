@@ -191,3 +191,29 @@ agentmail svix exa-js @fly/sprites @modelcontextprotocol/sdk`. Only **M3** may a
   `/store/orders` return flow per PLAN S6-X3. v1 must stay byte-for-byte compatible.
 - **L5:** MV3 extension recording `Recording` objects; posts to `POST {app}/api/teach/recordings`
   (endpoint is Wave B — the extension also offers "Download JSON").
+
+---
+
+# Wave B (Learn & Heal · Return wire-up · Teach · README)
+
+New types at the bottom of `lib/contracts.ts` and in the S1 sections: EventTypes `heal.*`,
+`tool.called`, `workspace.saved`; optional `BrowserAdapter.listInteractive` / `download`;
+`InteractiveElement`; `SkillDetail.postActions` + `PostAction`; `SkillVersion`.
+No new packages are needed (exa-js is installed).
+
+Run core now lives in `lib/engine/engine.ts` (`createRunCore`: `performStep`, `executeSteps`,
+`requestApproval`, `verifyAndFinish`, `withRecovery`, `catchUp`) and is driven by the Mastra
+workflow `lib/mastra/workflows/chore-run.ts` (prepare → loop[execute-steps → approval] → verify → complete).
+
+## Ownership (Wave B)
+
+| Agent | Owns | Env / ports |
+|---|---|---|
+| H Heal | `lib/heal/`, `lib/exa/`, `lib/kernel/` (listInteractive, download, expand `<details>`), the **step-failure branch of `executeSteps`** in `lib/engine/engine.ts` (call the healer before failing), `db/migrations/004_*` (skill_versions), `components/heal/`, `components/ActivityList.tsx`, `components/RunPanel.tsx` (heal display only), `scripts/smoke-heal.ts` | `.env.heal`, next 3011, demo 4001 |
+| R Return | `lib/actions/`, `lib/mastra/workflows/chore-run.ts` (add a `post-actions` step after verify), **`performStep` input resolution** in `lib/engine/engine.ts` (`pref:` for click/select/radio), `lib/neon/seed-data.ts`, `scripts/seed.ts`, `lib/neon/repo.ts` (postActions mapping only), `db/migrations/006_*`, `components/workspace/`, `components/SkillDetailView.tsx`, `app/api/workspace/`, `scripts/smoke-return.ts` | `.env.return`, next 3012, demo 4002 |
+| K Teach | `lib/learn/`, `app/api/teach/`, `app/(dashboard)/teach/`, `db/migrations/005_*`, `scripts/smoke-teach.ts` | `.env.learn`, next 3013, demo 4003 |
+| D Docs | `README.md`, `docs/ARCHITECTURE.md`, `docs/DEMO_SCRIPT.md`, `docs/screenshots/` | — |
+
+Shared rule for the two agents editing `lib/engine/engine.ts`: H edits only the failure branch of
+`executeSteps` (+ a small hook), R edits only `performStep`. Keep hunks small so the merge is clean.
+Migration numbers: 004 heal, 005 teach, 006 return.

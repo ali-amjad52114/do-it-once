@@ -77,6 +77,33 @@ export interface SkillDetail extends Skill {
   steps: SkillStep[];
   triggers: string[];
   preferences: Record<string, unknown>;
+  /** Wave B: API/workspace actions after a verified success (Executor, Sprite). */
+  postActions?: PostAction[];
+}
+
+/** Wave B: done after verification succeeds. API available → Executor; files → Fly Sprite. */
+export type PostAction =
+  | {
+      type: 'save_download'; // download a file from the final page into the Sprite workspace
+      linkText: string; // e.g. "Download label"
+      folder: 'receipts' | 'downloads' | 'return-labels' | 'statements' | 'artifacts';
+    }
+  | {
+      type: 'calendar_event'; // create an event through Executor (ICS fallback)
+      title: string; // may use {merchant} {item} {rma}
+      dateFromPage: string; // regex with one capture group for the date, e.g. "Drop off by ([A-Z][a-z]{2} \d{1,2}, \d{4})"
+      durationMinutes: number;
+      location?: string | null;
+    };
+
+/** Wave B: history of a skill's step definitions (self-heal and teach create new versions). */
+export interface SkillVersion {
+  skillId: string;
+  version: number;
+  reason: 'seed' | 'heal' | 'teach' | 'edit';
+  steps: SkillStep[];
+  note: string | null; // "Website changed: Billing → Plan & payments"
+  createdAt: string;
 }
 
 // ───────────────────────── Runs ─────────────────────────
@@ -134,6 +161,14 @@ export type EventType =
   | 'run.succeeded'
   | 'run.failed'
   | 'run.stopped'
+  // Wave B
+  | 'heal.started' // a stored step failed; the agent is re-discovering the path
+  | 'heal.step' // one action the healer took on the live page
+  | 'heal.research' // Exa research used during healing (metadata: { query, sources })
+  | 'heal.succeeded' // reached the expected state again; skill updated to a new version
+  | 'heal.failed'
+  | 'tool.called' // Executor/API action after the chore (metadata: { via, detail, url })
+  | 'workspace.saved' // file saved to the Fly Sprite workspace (metadata: { path, location })
   | 'log';
 
 export interface ExecutionEvent {
@@ -225,6 +260,18 @@ export interface BrowserAdapter {
   readPage(sessionId: string): Promise<PageState>;
   screenshot(sessionId: string): Promise<Buffer>; // PNG
   close(sessionId: string): Promise<void>;
+  /** Wave B (self-heal): visible interactive elements on the current page. Optional so fakes stay valid. */
+  listInteractive?(sessionId: string): Promise<InteractiveElement[]>;
+  /** Wave B: download the file behind a link/button; returns bytes + suggested name. */
+  download?(sessionId: string, target: ElementTarget): Promise<{ fileName: string; mimeType: string; bytes: Buffer } | null>;
+}
+
+export interface InteractiveElement {
+  role: string; // link | button | checkbox | radio | combobox | textbox | summary | ...
+  name: string; // accessible name
+  selector: string; // re-usable Playwright selector, e.g. role=link[name="Plan & payments"]
+  tag: string;
+  hidden?: boolean; // e.g. inside a closed <details>
 }
 
 // ───────────────────────── Verification (lib/engine/verify.ts) ─────────────────────────
