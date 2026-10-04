@@ -179,7 +179,13 @@ export function Home() {
           Do it once. Your agent does it forever, and checks with you before anything you can’t undo.
         </p>
         {/* Slot owned by the chat agent (M3): "Get rid of this subscription" → matching skill → run. */}
-        <CommandBar onRunStarted={(id) => setRunId(id)} />
+        <CommandBar
+          onRunStarted={(id) => {
+            setRunId(id);
+            void refreshToday();
+            setTimeout(() => panelRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 150);
+          }}
+        />
       </section>
 
       <section aria-labelledby="today" className="mb-14">
