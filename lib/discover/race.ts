@@ -196,6 +196,8 @@ export async function finishLogin(id: string): Promise<{ ok: true; done: Promise
   const login = d.login_session ? j<DiscoveryLogin>(d.login_session) : null;
   if (d.state !== 'needs_login' || !login || login.state !== 'pending') return { ok: false, error: 'this discovery is not waiting for sign-in' };
   if (login.sessionId) await getBrowserAdapter().close(login.sessionId);
+  // Give Kernel a moment to persist the profile before the lanes open with it.
+  await new Promise((r) => setTimeout(r, 4000));
   const signed: DiscoveryLogin = { ...login, state: 'signed_in', sessionId: null };
   await sql`
     INSERT INTO site_logins (user_id, host, profile_name) VALUES (${d.user_id}, ${hostOf(d.start_url)}, ${login.profile})
