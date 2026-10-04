@@ -6,7 +6,7 @@ import { env } from '@/lib/env';
 export const MODELS = {
   fast: 'claude-haiku-4-5', // classification, short judgments
   smart: 'claude-sonnet-4-6', // planning, normalizing traces, healing
-  embed: 'qwen3-embedding-0-6b', // 1024 dims → skill_triggers.embedding vector(1024)
+  embed: 'gte-large-en', // 1024 dims (separates intents better than qwen3-embedding-0-6b) → skill_triggers.embedding vector(1024)
 } as const;
 
 export const EMBEDDING_DIMS = 1024;
