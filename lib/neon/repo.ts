@@ -414,6 +414,9 @@ export async function resetDemoState(): Promise<void> {
       UPDATE skill_runs SET state = 'stopped', completed_at = now(), error = 'Reset before finishing'
       WHERE user_id = ${DEMO_USER_ID} AND state NOT IN ('succeeded', 'failed', 'stopped')`,
     sql`UPDATE skill_runs SET trigger_id = NULL WHERE trigger_id = ${DEMO_TRIGGER_ID}`,
+    // Old email-driven cards would otherwise re-attach their finished run panel after a reset.
+    sql`UPDATE incoming_triggers SET state = 'dismissed', updated_at = now()
+        WHERE user_id = ${DEMO_USER_ID} AND source = 'email' AND state <> 'dismissed'`,
     sql`UPDATE incoming_triggers SET state = 'pending', updated_at = now() WHERE id = ${DEMO_TRIGGER_ID}`,
   ]);
 }

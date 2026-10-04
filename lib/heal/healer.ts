@@ -101,7 +101,10 @@ export async function runHealer(deps: HealDeps, input: HealInput): Promise<HealR
     }
     research = await deps.research(input.skill.title, { site, failedStep: oldName }).catch(() => null);
     if (research) {
-      await emit('heal.research', `Researched with Exa: ${research.summary}`, {
+      const message = research.sources.length
+        ? `Checked the web with Exa: ${research.summary} on the new procedure`
+        : 'Checked the web with Exa for the new procedure — nothing published, so reading the live page instead';
+      await emit('heal.research', message, {
         query: research.query,
         sources: research.sources.map((s) => ({ url: s.url, title: s.title })),
         summary: research.summary,
