@@ -84,12 +84,19 @@ function isSessionGone(err: unknown): boolean {
 }
 
 /**
- * Demo pacing: pause STEP_MIN_MS (default 0) before each browser action so the checklist and Kernel's
- * live view move together. Off in tests.
+ * Demo pacing: STEP_MIN_MS (default 0, off in tests) is split around each step's confirmation so the
+ * checklist and Kernel's live view move together.
  */
-async function paceStep() {
-  const wait = Number(process.env.STEP_MIN_MS ?? 0);
+async function paceStep(fraction: number) {
+  const wait = Number(process.env.STEP_MIN_MS ?? 0) * fraction;
   if (wait > 0) await new Promise((r) => setTimeout(r, wait));
+}
+
+/** The expectedAfter alternative actually found on the page (the step's confirmation evidence). */
+function confirmedText(expectedAfter: string | null, pageText: string | undefined): string | null {
+  if (!expectedAfter || !pageText) return null;
+  const text = pageText.toLowerCase();
+  return expectedAfter.split('|').map((t) => t.trim()).find((t) => t && text.includes(t.toLowerCase())) ?? null;
 }
 
 export function errorMessage(err: unknown): string {
@@ -421,9 +428,6 @@ export function createRunCore(deps: RunEngineDeps) {
 
       const urlBefore = ctx.lastUrl;
       await emit(runId, 'step.started', step.intent, { stepSequence: step.sequence, url: urlBefore, usedLocator: null });
-      // Demo pacing BEFORE acting: the checklist shows "● <step>" while the live view still shows the
-      // previous page; the click then happens and the ✓ arrives as the new page appears.
-      await paceStep();
 
       const span = tracer?.start(step, 'step');
       let outcome: ActionOutcome;
@@ -466,11 +470,16 @@ export function createRunCore(deps: RunEngineDeps) {
         await repo.updateStepLocator(step.id, outcome.usedLocator);
         step.locatorHint = outcome.usedLocator;
       }
-      await emit(runId, 'step.succeeded', `${step.intent} — done`, {
+      // Execute → confirm on the page → show ✓ with the proof → short pause → next step.
+      // The first pause lets Kernel's live view (a video stream) catch up before the ✓ appears.
+      await paceStep(0.6);
+      const confirmed = confirmedText(step.expectedAfter, outcome.page?.text);
+      await emit(runId, 'step.succeeded', confirmed ? `${step.intent} — confirmed: page shows “${confirmed}”` : `${step.intent} — done`, {
         stepSequence: step.sequence,
         url: ctx.lastUrl,
         usedLocator: outcome.usedLocator,
       });
+      await paceStep(0.4);
     }
 
     if (isStopped(runId)) return halted(flow(ctx, 'halted'));
