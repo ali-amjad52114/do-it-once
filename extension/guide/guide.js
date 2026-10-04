@@ -29,6 +29,7 @@
   let located = null; // { index, el, reason } from "I can't find it"
   let timer = null;
   let busy = false;
+  let scrolledFor = -1; // step index we already scrolled into view (once per step and page)
 
   function send(type, extra) {
     return new Promise((resolve) => {
@@ -161,6 +162,25 @@
     const above = r.top - pad - tipH - 10;
     ui.tip.style.top = (above > 8 ? above : r.bottom + pad + 10) + 'px';
     ui.tip.style.left = Math.max(8, Math.min(r.left - pad, window.innerWidth - 336)) + 'px';
+    // Never cover the element the user has to click: move the panel to the other edge.
+    placePanel(r);
+  }
+
+  // Never cover the element the user has to click: pick the edge that's clear, else go compact.
+  function placePanel(r) {
+    const p = ui.panel;
+    p.classList.remove('mini');
+    const h = p.offsetHeight || 140;
+    const vh = window.innerHeight;
+    const clear = (top, bottom) => bottom < r.top - 4 || top > r.bottom + 4;
+    const topClear = clear(16, 16 + h);
+    const bottomClear = clear(vh - 16 - h, vh - 16);
+    if (bottomClear) p.classList.remove('top');
+    else if (topClear) p.classList.add('top');
+    else {
+      p.classList.add('mini');
+      p.classList.toggle('top', r.top + r.height / 2 > vh / 2);
+    }
   }
 
   function drawDone() {
@@ -206,6 +226,11 @@
         target = hit ? hit.el : null;
       }
       current = target;
+      if (target && scrolledFor !== state.index) {
+        scrolledFor = state.index;
+        const r = target.getBoundingClientRect();
+        if (r.top < 0 || r.bottom > window.innerHeight) target.scrollIntoView({ block: 'center' });
+      }
       drawStep(target);
     } finally {
       busy = false;

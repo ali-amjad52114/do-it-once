@@ -32,10 +32,14 @@
 .tip.amber span { opacity: 1; font-weight: 600; }
 
 .panel {
-  position: fixed; right: 16px; bottom: 16px; width: 300px; pointer-events: auto;
+  position: fixed; right: 16px; bottom: 16px; width: min(300px, calc(100vw - 32px)); pointer-events: auto;
   background: var(--paper); border: 1px solid var(--line-strong); border-radius: 16px;
   padding: 14px 14px 12px; box-shadow: 0 16px 40px rgb(0 0 0 / .18);
 }
+.panel.top { bottom: auto; top: 16px; }
+.panel.mini { padding: 8px 10px; top: auto; bottom: 8px; }
+.panel.mini.top { top: 8px; bottom: auto; }
+.panel.mini .eyebrow, .panel.mini .note, .panel.mini .msg, .panel.mini .title { display: none; }
 .eyebrow { display: flex; align-items: center; gap: 7px; font-size: 10.5px; font-weight: 650; letter-spacing: .08em; text-transform: uppercase; color: #8e887d; }
 .mark { width: 8px; height: 8px; border-radius: 3px; background: var(--guide); }
 .title { font-weight: 650; font-size: 14px; margin: 6px 0 2px; }
