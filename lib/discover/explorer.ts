@@ -21,8 +21,8 @@ export interface ExploreInput {
   startUrl: string;
   strategy: string; // lane label
   hint: string; // lane strategy prompt
-  maxActions?: number; // default 20
-  timeLimitMs?: number; // default 150 s
+  maxActions?: number; // default 35
+  timeLimitMs?: number; // default 240 s
   profileName?: string | null; // saved site login (Kernel profile), attached read-only
   signedIn?: boolean; // the user already signed in once: a login page now means "Still not signed in"
 }
@@ -90,8 +90,8 @@ function target(el: InteractiveElement): RecordedAction['target'] {
 export async function exploreAttempt(deps: ExploreDeps, input: ExploreInput): Promise<ExploreResult> {
   const { browser } = deps;
   const now = deps.now ?? Date.now;
-  const max = input.maxActions ?? 20;
-  const deadline = now() + (input.timeLimitMs ?? 150_000);
+  const max = input.maxActions ?? 35;
+  const deadline = now() + (input.timeLimitMs ?? 240_000);
   const startedAt = new Date().toISOString();
   const actions: RecordedAction[] = [];
   const history: string[] = [];
